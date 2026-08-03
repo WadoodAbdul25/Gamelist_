@@ -441,17 +441,26 @@
               <span>Started</span>
               <input id="startedAtInput" type="date">
             </label>
+            <label class="playing-completed-field">
+              <span>Finished</span>
+              <input id="completedAtInput" type="date">
+            </label>
             <label class="playing-finish-time-field">
               <span>Time to finish</span>
               <input id="finishHoursInput" type="text" inputmode="numeric" placeholder="Hours">
             </label>
             <label class="check-filter toggle-check form-check playing-achievements-check">
               <input id="platinumInput" type="checkbox">
-              <span>Completed Achievements</span>
-            </label>
-            <label class="playing-completed-field">
-              <span>Finished</span>
-              <input id="completedAtInput" type="date">
+              <span class="achievement-check-icon" title="Completed achievements" aria-label="Completed achievements">
+                <svg class="trophy-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 4h8v4a4 4 0 0 1-8 0V4Z"></path>
+                  <path d="M8 6H5a3 3 0 0 0 3 3"></path>
+                  <path d="M16 6h3a3 3 0 0 1-3 3"></path>
+                  <path d="M12 12v4"></path>
+                  <path d="M9 20h6"></path>
+                  <path d="M10 16h4v4h-4z"></path>
+                </svg>
+              </span>
             </label>
           </div>
         </section>
@@ -490,15 +499,15 @@
               <span>Release Text (Optional)</span>
               <input id="releaseTextInput" placeholder="2026?, 18 June, TBA...">
             </label>
-            <label class="check-filter toggle-check form-check collection-check">
+            <label class="check-filter toggle-check form-check collection-check digital-check">
               <input id="digitalInput" type="checkbox">
               <span>Digital</span>
             </label>
-            <label class="check-filter toggle-check form-check collection-check">
+            <label class="check-filter toggle-check form-check collection-check emulator-check">
               <input id="emulatorInput" type="checkbox">
               <span>Emulator</span>
             </label>
-            <label class="check-filter toggle-check form-check collection-check">
+            <label class="check-filter toggle-check form-check collection-check coop-check">
               <input id="coopInput" type="checkbox">
               <span>Coop</span>
             </label>
@@ -514,31 +523,23 @@
               </span>
             </label>
             <label class="preferred-store-field">
-              <span>Preferred Store</span>
+              <span>Preferred preorder store</span>
               <span class="icon-input store-icon-input">
                 <span class="field-leading-icon preferred-store-field-icon" aria-hidden="true"></span>
                 <input id="preferredStoreInput" placeholder="Limited Run, Amazon...">
               </span>
             </label>
             <label class="owners-field">
-              <span>Owners</span>
+              <span>Owner</span>
               <input id="ownersInput" list="ownerOptions" placeholder="User, Judy...">
             </label>
             <label class="status-field">
-              <span>Status</span>
+              <span>Other tags</span>
               <input id="statusesInput" list="statusOptions" placeholder="To Collect, Scarce, Waiting for Physical">
-            </label>
-            <label class="game-tags-field">
-              <span>Game Tags</span>
-              <input id="genresInput" placeholder="Adventure, RPG, FPS">
             </label>
             <label class="trophy-search-field">
               <span>Alternate Achievement search name</span>
               <input id="trophyNameInput" placeholder="Optional alternate title">
-            </label>
-            <label class="wide notes-field">
-              <span>Notes</span>
-              <textarea id="notesInput" rows="3"></textarea>
             </label>
           </div>
         </section>
@@ -554,6 +555,10 @@
               <span>Publisher</span>
               <input id="publisherInput" placeholder="Publisher">
             </label>
+            <label class="wide game-tags-field">
+              <span>Genre</span>
+              <input id="genresInput" placeholder="Adventure, RPG, FPS">
+            </label>
             <label class="wide">
               <span>Description</span>
               <textarea id="descriptionInput" rows="4" placeholder="Manual description or fetched game summary"></textarea>
@@ -563,36 +568,32 @@
               <input id="igdbUrlInput" placeholder="https://www.igdb.com/games/...">
             </label>
             <label class="wide">
+              <span>HowLongToBeat URL</span>
+              <input id="hltbUrlInput" placeholder="https://howlongtobeat.com/game/...">
+            </label>
+            <label class="wide">
               <span>Trailer URL</span>
               <input id="trailerUrlInput" placeholder="https://www.youtube.com/watch?v=...">
             </label>
-            <label class="wide">
+            <label class="store-link-field">
               <span>PlayStation Store URL</span>
               <input id="playstationUrlInput" placeholder="https://store.playstation.com/...">
             </label>
-            <label class="wide">
+            <label class="store-link-field">
               <span>Nintendo Store URL</span>
               <input id="nintendoUrlInput" placeholder="https://www.nintendo.com/...">
             </label>
-            <label class="wide">
-              <span>Xbox Store URL</span>
-              <input id="xboxUrlInput" placeholder="https://www.xbox.com/...">
-            </label>
-            <label class="steam-url-field">
+            <label class="store-link-field">
               <span>Steam URL</span>
               <input id="steamUrlInput" placeholder="https://store.steampowered.com/app/...">
             </label>
-            <label class="steam-app-id-field">
-              <span>Steam App ID</span>
-              <input id="steamAppIdInput" inputmode="numeric" placeholder="123456">
+            <label class="store-link-field">
+              <span>Xbox Store URL</span>
+              <input id="xboxUrlInput" placeholder="https://www.xbox.com/...">
             </label>
             <label class="wide">
               <span>Cover URL</span>
               <input id="coverInput" placeholder="https://...">
-            </label>
-            <label class="wide">
-              <span>Upload Cover</span>
-              <input id="coverUpload" type="file" accept="image/*">
             </label>
           </div>
         </section>

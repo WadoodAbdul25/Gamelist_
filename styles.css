@@ -3684,9 +3684,14 @@ textarea {
   padding: 11px 12px;
 }
 
+textarea {
+  resize: vertical;
+}
+
 .icon-input {
   position: relative;
   display: block;
+  margin-bottom: 0;
   color: inherit;
   font-size: 15px;
   font-weight: 400;
@@ -10804,6 +10809,7 @@ body.theme-kash
 
 .collection-form-grid {
   grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 10px 12px;
 }
 
 .collection-form-grid > label {
@@ -10811,7 +10817,7 @@ body.theme-kash
 }
 
 .collection-form-grid > .title-field {
-  grid-column: span 8;
+  grid-column: span 7;
 }
 
 .collection-form-grid > .platform-field {
@@ -10819,16 +10825,23 @@ body.theme-kash
 }
 
 .collection-form-grid > .dlc-check {
-  grid-column: span 1;
+  grid-column: span 2;
+  align-self: end;
+  min-width: 0;
+  padding-inline: 8px;
 }
 
 .collection-form-grid > .list-field {
-  grid-column: span 3;
+  grid-column: span 4;
 }
 
 .collection-form-grid > .collection-check {
   grid-column: span 4;
   padding-inline: 8px;
+}
+
+.collection-form-grid > .digital-check {
+  grid-column: span 4;
 }
 
 .collection-form-grid > .release-date-field,
@@ -10842,14 +10855,17 @@ body.theme-kash
   grid-column: span 4;
 }
 
+.collection-form-grid > .preferred-store-field {
+  grid-column: span 4;
+}
+
 .collection-form-grid > .owners-field,
 .collection-form-grid > .status-field {
   grid-column: span 6;
 }
 
-.collection-form-grid > .game-tags-field,
 .collection-form-grid > .trophy-search-field {
-  grid-column: span 6;
+  grid-column: 1 / -1;
 }
 
 .collection-form-grid > .notes-field {
@@ -10860,7 +10876,32 @@ body.theme-kash
 .collection-form-grid select,
 .collection-form-grid .icon-input input,
 .collection-form-grid .check-filter {
+  height: 44px;
   min-height: 44px;
+  box-sizing: border-box;
+}
+
+.collection-form-grid > .title-field input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-data-grid > .store-link-field {
+  grid-column: span 1;
+}
+
+.game-data-grid,
+.game-data-grid > label {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.game-data-grid input:not([type="checkbox"]),
+.game-data-grid textarea {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .playing-form-grid {
@@ -10870,17 +10911,17 @@ body.theme-kash
 
 .playing-form-grid > .modal-playing-check,
 .playing-form-grid > label.stream-check {
-  grid-column: span 2;
+  grid-column: span 3;
   padding-inline: 8px;
 }
 
 .playing-form-grid > label.playing-replay-field {
-  grid-column: span 2;
+  grid-column: span 4;
 }
 
 .playing-form-grid > label.playing-started-field,
 .playing-form-grid > label.playing-completed-field {
-  grid-column: span 4;
+  grid-column: span 3;
 }
 
 .playing-form-grid > label.playing-finish-time-field {
@@ -10892,8 +10933,31 @@ body.theme-kash
 }
 
 .playing-form-grid > label.playing-achievements-check {
-  grid-column: span 3;
+  grid-column: span 1;
   padding-inline: 8px;
+}
+
+.playing-achievements-check .achievement-check-icon {
+  display: grid;
+  place-items: center;
+  margin-bottom: 0;
+  color: var(--text);
+}
+
+.playing-achievements-check .trophy-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.playing-achievements-check:has(input:checked) {
+  color: #ffe985;
+  border-color: rgba(255, 233, 133, 0.48);
+  background: rgba(255, 211, 94, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 233, 133, 0.12);
+}
+
+.playing-achievements-check:has(input:checked) .achievement-check-icon {
+  color: #ffe985;
 }
 
 .form-group:has(.playing-form-grid) {
@@ -11373,7 +11437,6 @@ body.theme-kash
   .collection-form-grid > .preferred-store-field,
   .collection-form-grid > .owners-field,
   .collection-form-grid > .status-field,
-  .collection-form-grid > .game-tags-field,
   .collection-form-grid > .trophy-search-field,
   .collection-form-grid > .notes-field {
     grid-column: 1 / -1;

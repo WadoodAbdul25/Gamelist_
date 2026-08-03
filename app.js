@@ -317,6 +317,15 @@ const el = {
   authCancelButton: document.querySelector("#authCancelButton"),
   authPasswordInput: document.querySelector("#authPasswordInput"),
   authError: document.querySelector("#authError"),
+  finishTimeDialog: document.querySelector("#finishTimeDialog"),
+  finishTimeForm: document.querySelector("#finishTimeForm"),
+  finishTimeInput: document.querySelector("#finishTimeInput"),
+  finishTimeError: document.querySelector("#finishTimeError"),
+  finishTimeCloseButton: document.querySelector("#finishTimeCloseButton"),
+  finishTimeSkipButton: document.querySelector("#finishTimeSkipButton"),
+  platformFieldIcon: document.querySelector(".platform-field-icon"),
+  preorderStoreFieldIcon: document.querySelector(".preorder-store-field-icon"),
+  preferredStoreFieldIcon: document.querySelector(".preferred-store-field-icon"),
   settingsLayoutList: document.querySelector("#settingsLayoutList"),
   settingsPsnUser: document.querySelector("#settingsPsnUser"),
   settingsMicrosoftUser: document.querySelector("#settingsMicrosoftUser"),
@@ -362,12 +371,14 @@ const el = {
     id: document.querySelector("#gameId"),
     title: document.querySelector("#titleInput"),
     platform: document.querySelector("#platformInput"),
+    dlc: document.querySelector("#dlcInput"),
     section: document.querySelector("#sectionInput"),
     releaseDate: document.querySelector("#releaseDateInput"),
     releaseText: document.querySelector("#releaseTextInput"),
     length: document.querySelector("#lengthInput"),
     startedAt: document.querySelector("#startedAtInput"),
     completedAt: document.querySelector("#completedAtInput"),
+    finishHours: document.querySelector("#finishHoursInput"),
     replayCount: document.querySelector("#replayCountInput"),
     platinum: document.querySelector("#platinumInput"),
     preorderStore: document.querySelector("#preorderStoreInput"),
@@ -388,6 +399,7 @@ const el = {
     trailerUrl: document.querySelector("#trailerUrlInput"),
     playstationUrl: document.querySelector("#playstationUrlInput"),
     nintendoUrl: document.querySelector("#nintendoUrlInput"),
+    xboxUrl: document.querySelector("#xboxUrlInput"),
     steamUrl: document.querySelector("#steamUrlInput"),
     steamAppId: document.querySelector("#steamAppIdInput"),
     cover: document.querySelector("#coverInput"),
@@ -899,6 +911,12 @@ function bindEvents() {
     if (event.target === el.authDialog) el.authDialog.close("cancel");
   });
   el.authDialog?.addEventListener("close", syncScrollLock);
+  el.finishTimeCloseButton?.addEventListener("click", () => el.finishTimeDialog.close("cancel"));
+  el.finishTimeSkipButton?.addEventListener("click", () => el.finishTimeDialog.close("skip"));
+  el.finishTimeDialog?.addEventListener("click", (event) => {
+    if (event.target === el.finishTimeDialog) el.finishTimeDialog.close("cancel");
+  });
+  el.finishTimeDialog?.addEventListener("close", syncScrollLock);
   el.settingsForm?.addEventListener("submit", saveSettingsFromForm);
   el.mobileTabs.forEach((button) => button.addEventListener("click", () => {
     state.mobileSection = button.dataset.mobileSection;
@@ -908,8 +926,15 @@ function bindEvents() {
   el.board.addEventListener("touchend", handleBoardSwipeEnd, { passive: true });
   window.addEventListener("touchend", handleBoardSwipeEnd, { passive: true });
   el.fields.section.addEventListener("change", syncDialogPriceVisibility);
-  el.fields.platform.addEventListener("input", syncDialogPriceVisibility);
+  el.fields.platform.addEventListener("input", () => {
+    syncDialogPriceVisibility();
+    syncPlatformInputIcon();
+  });
+  el.fields.platform.addEventListener("change", syncPlatformInputIcon);
+  el.fields.preorderStore.addEventListener("input", () => syncStoreInputIcon(el.fields.preorderStore, el.preorderStoreFieldIcon));
+  el.fields.preferredStore.addEventListener("input", () => syncStoreInputIcon(el.fields.preferredStore, el.preferredStoreFieldIcon));
   el.fields.digital.addEventListener("change", syncDialogPriceVisibility);
+  el.fields.dlc.addEventListener("change", syncDlcDigital);
   el.fields.replayCount.addEventListener("input", syncReplaySection);
   el.form.addEventListener("submit", saveFromForm);
   el.deleteButton.addEventListener("click", deleteCurrentGame);
@@ -1607,7 +1632,7 @@ function settingsDevFeaturesItem(kind) {
   `;
 }
 
-const CSV_NUMERIC_FIELDS = new Set(["order", "lengthHours", "replayCount", "numericPrice", "price", "estimatedValue", "purchasePrice"]);
+const CSV_NUMERIC_FIELDS = new Set(["order", "lengthHours", "finishHours", "replayCount", "numericPrice", "price", "estimatedValue", "purchasePrice"]);
 
 function downloadCsv(records, filename) {
   const csv = recordsToCsv(records);
@@ -1864,6 +1889,8 @@ function yearlyStatsCsvRecords() {
       startedAt: dateOnly(game.startedAt),
       completedAt: dateOnly(game.completedAt),
       lengthHours: game.lengthHours || "",
+      finishHours: game.finishHours || "",
+      dlc: Boolean(game.dlc),
       replayCount: game.replayCount || "",
       stream: Boolean(game.stream),
       coop: Boolean(game.coop),
@@ -1894,7 +1921,7 @@ async function importYearlyStatsCsv() {
     rows.forEach((row) => {
       const game = gameByCsvRow(row);
       if (!game) return;
-      ["startedAt", "completedAt", "lengthHours", "replayCount", "owners", "tags", "stream", "coop", "platinum", "digital", "emulator"].forEach((key) => {
+      ["startedAt", "completedAt", "lengthHours", "finishHours", "dlc", "replayCount", "owners", "tags", "stream", "coop", "platinum", "digital", "emulator"].forEach((key) => {
         if (row[key] !== undefined && row[key] !== "") game[key] = row[key];
       });
       markGameEdited(game, now);
@@ -2048,7 +2075,7 @@ function renderModeToggle(button, mode) {
 }
 
 function syncScrollLock() {
-  document.body.classList.toggle("dialog-open", el.dialog.open || el.detailDialog.open || el.historyDialog.open || el.releaseDialog.open || el.platinumDialog.open || Boolean(el.finishedStatsDialog?.open) || Boolean(el.gotyDialog?.open) || Boolean(el.settingsDialog?.open) || Boolean(el.authDialog?.open));
+  document.body.classList.toggle("dialog-open", el.dialog.open || el.detailDialog.open || el.historyDialog.open || el.releaseDialog.open || el.platinumDialog.open || Boolean(el.finishedStatsDialog?.open) || Boolean(el.gotyDialog?.open) || Boolean(el.settingsDialog?.open) || Boolean(el.authDialog?.open) || Boolean(el.finishTimeDialog?.open));
   if (document.body.classList.contains("dialog-open")) pauseAllPlayingTrailers();
   else scheduleFocusedPlayingTrailerUpdate();
   updateScrollTopButton();
@@ -2103,7 +2130,7 @@ function renderPlayingFinished() {
     const achievementProgress = achievementProgressForGame(game);
     const progress = achievementProgress ? progressValue(achievementProgress.game) : 0;
     const badges = `${completedOwnerBadges(game)}${completedBadges(game, { includePsn: false })}`;
-    return finishedGameMarkup({ id: game.id, title: game.title, cover: game.cover || platformLogo(game.platform || "PS5"), completedClass: game.platinum ? "completed-trophy-card" : "", itemClass: ownerCardClass(game), badges, dateText: [formatLongDate(game.completedAt), finishedDurationText(game.startedAt, game.completedAt)].filter(Boolean).join(" · "), progress: achievementProgress ? progress : null, escape: escapeHtml });
+    return finishedGameMarkup({ id: game.id, title: game.title, cover: game.cover || platformLogo(game.platform || "PS5"), completedClass: game.platinum ? "completed-trophy-card" : "", itemClass: ownerCardClass(game), badges, dateText: finishedDateText(game), progress: achievementProgress ? progress : null, escape: escapeHtml });
   }).join("");
   el.playingFinishedList.querySelectorAll(".playing-finished-game").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -2128,6 +2155,8 @@ function renderGameOfTheYear() {
   const year = state.gotyYear;
   const entry = state.settings.gameOfTheYear?.[year] || {};
   const picks = entry.picks || {};
+  const candidates = gameOfTheYearCandidateGames(year);
+  const candidateIds = new Set(candidates.map((game) => game.id));
   el.gotySection.hidden = false;
   const sectionTitle = window.matchMedia("(max-width: 520px)").matches ? `My GOTYs ${year}` : `My Games of the year ${year}`;
   el.gotyTitle.innerHTML = `${trophyIcon()} <span>${escapeHtml(sectionTitle)}</span>`;
@@ -2135,7 +2164,7 @@ function renderGameOfTheYear() {
   el.gotyYearSelect.value = year;
   syncStyledSelect(el.gotyYearSelect, { activeValue: null });
   if (el.gotyYearCount) {
-    const count = gameOfTheYearCandidateGames(year).length;
+    const count = candidates.length;
     el.gotyYearCount.textContent = `${count} ${count === 1 ? "game" : "games"} played`;
   }
   const canEditCurrent = state.canEdit && year === currentGameOfTheYear();
@@ -2155,7 +2184,7 @@ function renderGameOfTheYear() {
   }
   el.gotyGrid.innerHTML = GAME_OF_YEAR_CATEGORIES.map(([key, label], index) => {
     const game = gameById(picks[key]);
-    if (!game) return "";
+    if (!game || !candidateIds.has(game.id)) return "";
     const cover = coverDisplayUrl(game.cover || "") || platformLogo(game.platform || "PS5");
     const edgeClass = index >= GAME_OF_YEAR_CATEGORIES.length - 2 ? "goty-card-edge-right" : index === 0 ? "goty-card-edge-left" : "";
     return `
@@ -4541,24 +4570,27 @@ function trophyTone(value) {
 }
 
 function renderStats() {
-  const active = filteredGames({ applyPreorder: false }).filter((game) => !game.completedAt);
+  const active = filteredGames({ applyPreorder: false }).filter((game) => !game.completedAt && !game.dlc);
   const total = active.length;
   const currentYear = String(new Date().getFullYear());
   const listedCompleted = state.games.filter((game) => !game.deletedAt && Boolean(game.completedAt));
-  const completedThisYear = listedCompleted.filter((game) => completionYear(game) === currentYear).length;
-  const markedCompleted = listedCompleted.filter((game) => game.platinum);
+  const finishedGames = listedCompleted.filter((game) => !game.dlc);
+  const finishedExpansions = listedCompleted.filter((game) => game.dlc);
+  const finishedGamesThisYear = finishedGames.filter((game) => completionYear(game) === currentYear).length;
+  const finishedExpansionsThisYear = finishedExpansions.filter((game) => completionYear(game) === currentYear).length;
+  const markedCompleted = finishedGames.filter((game) => game.platinum);
   const markedCompletedThisYear = markedCompleted.filter((game) => completionYear(game) === currentYear).length;
   const counts = {
     new: active.filter((game) => game.section === "new").length,
     wanted: active.filter((game) => game.section === "wanted").length,
     upcoming: active.filter((game) => game.section === "upcoming").length,
     backlog: active.filter((game) => game.section === "backlog").length,
-    completed: listedCompleted.length,
+    completed: finishedGames.length,
   };
   el.stats.innerHTML = [
-    stat(`Finished ${currentYear}`, completedThisYear, "done", {
+    stat(`Finished ${currentYear}`, finishedGamesThisYear, "done", {
       action: "completed",
-      detail: completedStatDetail(currentYear, completedThisYear, counts.completed, markedCompletedThisYear),
+      detail: completedStatDetail(currentYear, finishedGamesThisYear, counts.completed, markedCompletedThisYear, finishedExpansionsThisYear),
     }),
     stat("Backlog", counts.backlog, "backlog", { detail: sectionStatDetail("backlog", active, total) }),
     stat("Upcoming", counts.upcoming, "release", { detail: sectionStatDetail("upcoming", active, total) }),
@@ -4610,10 +4642,11 @@ function sectionStatDetail(section, games, total) {
   `;
 }
 
-function completedStatDetail(year, yearCount, total, completedYearCount) {
+function completedStatDetail(year, yearCount, total, completedYearCount, expansionsYearCount = 0) {
+  const expansionText = expansionsYearCount ? ` (and ${expansionsYearCount} ${expansionsYearCount === 1 ? "expansion" : "expansions"})` : "";
   return `
     <div class="stat-detail">
-      <span>${yearCount} ${yearCount === 1 ? "game" : "games"} in ${escapeHtml(year)}</span>
+      <span>${yearCount} ${yearCount === 1 ? "game" : "games"} in ${escapeHtml(year)}${escapeHtml(expansionText)}</span>
       ${completedYearCount ? `<span class="completed-year-count-pill">${completedYearCount} completed of ${yearCount} this year</span>` : ""}
       <b>Total ${total} finished ${total === 1 ? "game" : "games"}</b>
     </div>
@@ -5182,7 +5215,8 @@ function rowCoreStats(game) {
   const release = releaseStatus(game);
   return [
     game.platform ? platformBadge(game.platform, null, { title: game.title }) : "",
-    game.digital ? `<span class="digital-pill">Digital</span>` : "",
+    game.dlc ? dlcBadge(game) : "",
+    game.digital && !game.dlc ? `<span class="digital-pill">Digital</span>` : "",
     game.emulator ? `<span class="emulator-pill">Emulator</span>` : "",
     game.lengthHours ? timeBadge(game.lengthHours, hltbUrlFor(game)) : "",
     game.stream ? `<span class="stream-pill">Stream</span>` : "",
@@ -5237,8 +5271,8 @@ function renderCompleted() {
       <div class="completed-main">
         <strong class="${game.platinum ? "completed-achievements-title" : ""}">${escapeHtml(game.title)}</strong>
         <span class="completed-platform">${completedOwnerBadges(game)}${completedBadges(game)}</span>
-        <span class="completed-dates">${escapeHtml(historyRangeText(game))}</span>
         ${completedDurationLine(game)}
+        <span class="completed-dates">${escapeHtml(historyRangeText(game))}</span>
       </div>
       <div class="completed-actions">
         <button class="icon-button completed-edit-action" type="button" title="Edit" aria-label="Edit">${pencilIcon()}</button>
@@ -5327,13 +5361,23 @@ function handleCompletedYearChange(event) {
 
 function updateCompletedCount(count) {
   if (!el.completedCount) return;
-  el.completedCount.innerHTML = `${count} ${count === 1 ? "game" : "games"}`;
+  const games = typeof count === "object" ? Number(count.games || 0) : Number(count || 0);
+  const expansions = typeof count === "object" ? Number(count.expansions || 0) : 0;
+  const gameText = `${games} ${games === 1 ? "game" : "games"}`;
+  const expansionText = expansions ? `${expansions} ${expansions === 1 ? "expansion" : "expansions"}` : "";
+  el.completedCount.innerHTML = expansionText
+    ? `<span>${escapeHtml(gameText)}</span><span class="completed-count-separator" aria-hidden="true">&middot;</span><span class="completed-count-expansions">${escapeHtml(expansionText)}</span>`
+    : `<span>${escapeHtml(gameText)}</span>`;
 }
 
 function completedCountForSelectedYear() {
-  return state.games.filter((game) => !game.deletedAt
+  const finished = state.games.filter((game) => !game.deletedAt
     && game.completedAt
-    && (state.completedYear === "all" || completionYear(game) === state.completedYear)).length;
+    && (state.completedYear === "all" || completionYear(game) === state.completedYear));
+  return {
+    games: finished.filter((game) => !game.dlc).length,
+    expansions: finished.filter((game) => game.dlc).length,
+  };
 }
 
 function openFinishedStatsDialog(year = "all") {
@@ -5374,20 +5418,23 @@ function completedStatsYearFor(item) {
 }
 
 function finishedStatsMarkup(year, games, completed) {
-  const platforms = countBy(games, statsPlatformLabel);
-  const tags = countTags(games);
-  const timeBuckets = countApproximatePlaytimeBuckets(games);
-  const mediaBuckets = countPhysicalDigitalGames(games);
-  const months = countBy(games, (game) => monthShortName(game.completedAt));
-  const streamed = games.filter((game) => game.stream);
-  const coopGames = games.filter((game) => game.coop);
-  const otherOwnerGames = games.filter((game) => visibleOwnerTags(game).length);
+  const finishedGames = games.filter((game) => !game.dlc);
+  const expansions = games.filter((game) => game.dlc);
+  const platforms = countBy(finishedGames, statsPlatformLabel);
+  const tags = countTags(finishedGames);
+  const timeBuckets = countApproximatePlaytimeBuckets(finishedGames);
+  const mediaBuckets = countPhysicalDigitalGames(finishedGames);
+  const months = countBy(finishedGames, (game) => monthShortName(game.completedAt));
+  const streamed = finishedGames.filter((game) => game.stream);
+  const coopGames = finishedGames.filter((game) => game.coop);
+  const otherOwnerGames = finishedGames.filter((game) => visibleOwnerTags(game).length);
   const otherOwnerSummary = statsOtherOwnerSummary(otherOwnerGames);
   const allYears = year === "all";
   const releaseInsights = statsReleaseYearInsights(year, games);
   const showYearlyDetail = !allYears;
   const cards = [
-    statsKpiCard("Finished games", games.length, showYearlyDetail ? statsGameList(games) : "", { tone: "finished" }),
+    statsKpiCard("Finished games", finishedGames.length, showYearlyDetail ? statsGameList(finishedGames) : "", { tone: "finished" }),
+    expansions.length ? statsKpiCard("Expansions finished", expansions.length, statsGameList(expansions), { tone: "finished" }) : "",
     statsKpiCard("Completed games", completed.length, showYearlyDetail ? statsCompletedGameList(completed) : "", { action: "completed", tone: "completed", icon: trophyIcon() }),
     streamed.length ? statsKpiCard("Streamed games", streamed.length, showYearlyDetail ? statsGameList(streamed) : "", { tone: "streamed" }) : "",
     coopGames.length ? statsKpiCard("Coop games", coopGames.length, statsGameList(coopGames), { tone: "coop" }) : "",
@@ -5396,15 +5443,15 @@ function finishedStatsMarkup(year, games, completed) {
   return `
     <div class="finished-stats-kpis">${cards}</div>
     <div class="finished-stats-charts ${allYears ? "is-all" : ""}">
-      ${statsDonutCard("Platforms", platforms, "platform", 5, games)}
-      ${statsDonutCard("Categories", tags, "category", 5, games)}
-      ${statsDonutCard("Aproximate playtime", timeBuckets, "time", 5, games)}
-      ${statsDonutCard("Physical / digital / emulator", mediaBuckets, "media", 3, games)}
+      ${statsDonutCard("Platforms", platforms, "platform", 5, finishedGames)}
+      ${statsDonutCard("Categories", tags, "category", 5, finishedGames)}
+      ${statsDonutCard("Aproximate playtime", timeBuckets, "time", 5, finishedGames)}
+      ${statsDonutCard("Physical / digital / emulator", mediaBuckets, "media", 3, finishedGames)}
     </div>
     ${allYears ? "" : statsReleaseKpisCard(releaseInsights)}
     <section class="finished-stats-months">
       <h3>${allYears ? "By year" : "By month"}</h3>
-      <div class="finished-stats-period-grid ${allYears ? "is-yearly" : ""}">${allYears ? statsYearBars(games) : statsMonthBars(games, months, games.length)}</div>
+      <div class="finished-stats-period-grid ${allYears ? "is-yearly" : ""}">${allYears ? statsYearBars(finishedGames) : statsMonthBars(finishedGames, months, finishedGames.length)}</div>
     </section>
     ${games.length ? "" : `<div class="empty">No finished games${year === "all" ? "" : ` in ${escapeHtml(year)}`}.</div>`}
   `;
@@ -5447,12 +5494,14 @@ function statsReleaseKpisCard(insights) {
         ${statsReleaseMiniKpi({
           value: insights.playedFromYear.length,
           label: "Played new games",
+          subline: releaseExpansionLine(insights.newExpansions, "new expansion", "new expansions"),
           detail: insights.hoverable ? statsGameList(insights.playedFromYear) : "",
           tone: "played",
         })}
         ${statsReleaseMiniKpi({
           value: insights.playedOutsideYear.length,
           label: "Played games not from that year",
+          subline: releaseExpansionLine(insights.playedOutsideYearExpansions, "played expansion not from that year", "played expansions not from that year"),
           detail: insights.hoverable ? statsGameList(insights.playedOutsideYear) : "",
           tone: "played",
         })}
@@ -5461,36 +5510,53 @@ function statsReleaseKpisCard(insights) {
   `;
 }
 
-function statsReleaseMiniKpi({ value, label, detail = "", tone = "" }) {
+function statsReleaseMiniKpi({ value, label, subline = "", detail = "", tone = "" }) {
   return `
     <button class="finished-stats-release-kpi ${tone ? `is-${escapeHtml(tone)}` : ""}" type="button" ${detail ? `data-stats-overlay-title="${escapeHtml(label)}"` : ""}>
       <strong>${escapeHtml(String(value))}</strong>
       <span>${escapeHtml(label)}</span>
+      ${subline}
       ${detail ? `<span class="finished-stats-breakdown">${detail}</span>` : ""}
     </button>
   `;
 }
 
+function releaseExpansionLine(games, singular, plural) {
+  const count = Array.isArray(games) ? games.length : 0;
+  if (!count) return "";
+  return dlcBadge(games[0], `${count} ${count === 1 ? singular : plural}`, { className: "finished-stats-release-subline", tone: "accent" });
+}
+
 function statsReleaseYearInsights(year, games) {
-  const completionYears = unique(games.map(completionYear).filter(Boolean));
+  const finishedGames = games.filter((game) => !game.dlc);
+  const expansions = games.filter((game) => game.dlc);
+  const completionYears = unique(finishedGames.map(completionYear).filter(Boolean));
   const scopeYear = year !== "all" ? String(year) : (completionYears.length === 1 ? completionYears[0] : "");
   const libraryGames = state.games
-    .filter((game) => !game.deletedAt && game.releaseDate)
+    .filter((game) => !game.deletedAt && !game.dlc && game.releaseDate)
     .sort((a, b) => String(a.releaseDate || "").localeCompare(String(b.releaseDate || "")) || stringCompare(a.title, b.title));
   const interested = scopeYear
     ? libraryGames.filter((game) => releaseYear(game) === scopeYear)
     : libraryGames.filter((game) => completionYears.includes(releaseYear(game)));
   const playedFromYear = scopeYear
-    ? games.filter((game) => releaseYear(game) === scopeYear)
-    : games.filter((game) => releaseYear(game) && releaseYear(game) === completionYear(game));
+    ? finishedGames.filter((game) => releaseYear(game) === scopeYear)
+    : finishedGames.filter((game) => releaseYear(game) && releaseYear(game) === completionYear(game));
   const playedOutsideYear = scopeYear
-    ? games.filter((game) => releaseYear(game) !== scopeYear)
-    : games.filter((game) => releaseYear(game) && releaseYear(game) !== completionYear(game));
+    ? finishedGames.filter((game) => releaseYear(game) !== scopeYear)
+    : finishedGames.filter((game) => releaseYear(game) && releaseYear(game) !== completionYear(game));
+  const newExpansions = scopeYear
+    ? expansions.filter((game) => releaseYear(game) === scopeYear)
+    : expansions.filter((game) => releaseYear(game) && releaseYear(game) === completionYear(game));
+  const playedOutsideYearExpansions = scopeYear
+    ? expansions.filter((game) => releaseYear(game) !== scopeYear)
+    : expansions.filter((game) => releaseYear(game) && releaseYear(game) !== completionYear(game));
   return {
     scopeYear,
     interested,
     playedFromYear,
     playedOutsideYear,
+    newExpansions,
+    playedOutsideYearExpansions,
     hoverable: Boolean(scopeYear),
   };
 }
@@ -5738,7 +5804,7 @@ function statsGameList(games) {
       : progress
       ? psnProgressBadge(progress, { className: "finished-stats-progress-pill" })
       : (completed ? psnProgressBadge({ title: game.title, progress: 100 }, { className: "finished-stats-progress-pill" }) : "");
-    return `<span class="finished-stats-game-row ${completed ? "is-complete" : ""}"><b class="${escapeHtml(ownerTitleClass)}">${escapeHtml(game.title)}</b>${game.platform ? platformBadge(game.platform) : ""}${progressPill}</span>`;
+    return `<span class="finished-stats-game-row ${completed ? "is-complete" : ""}"><b class="${escapeHtml(ownerTitleClass)}">${escapeHtml(game.title)}</b>${game.platform ? platformBadge(game.platform) : ""}${game.dlc ? dlcBadge(game) : ""}${progressPill}</span>`;
   }).join("");
 }
 
@@ -5970,7 +6036,7 @@ function countApproximatePlaytimeBuckets(games) {
     bucketMap.set(label, (bucketMap.get(label) || 0) + 1);
   });
   const buckets = [...bucketMap.entries()]
-    .map(([label, count]) => ({ label, count, order: label === "<10" ? 0 : Number(label.split("-")[0]) }))
+    .map(([label, count]) => ({ label, count, order: playtimeBucketOrder(label) }))
     .sort((a, b) => a.order - b.order)
     .map(({ label, count }) => ({ label, count }));
   return buckets;
@@ -5986,10 +6052,22 @@ function physicalDigitalLabel(game) {
 }
 
 function playtimeBucketLabel(game) {
-  const hours = Number(game.lengthHours);
+  const hours = statsPlaytimeHours(game);
   if (!Number.isFinite(hours) || hours <= 0) return "";
+  if (hours >= 100) return `${Math.floor(hours / 100) * 100}+`;
   const start = Math.floor(hours / 10) * 10;
   return start === 0 ? "<10" : `${start}-${start + 10}`;
+}
+
+function playtimeBucketOrder(label) {
+  if (label === "<10") return 0;
+  if (label.endsWith("+")) return Number(label.slice(0, -1)) || 100;
+  return Number(label.split("-")[0]) || 0;
+}
+
+function statsPlaytimeHours(game) {
+  const finishHours = finishHoursValue(game?.finishHours);
+  return finishHours || Number(game?.lengthHours);
 }
 
 function gameStatsTags(game) {
@@ -6115,8 +6193,8 @@ function renderHistoryDialog() {
       <div>
         <strong class="${game.platinum ? "completed-achievements-title" : ""}">${escapeHtml(game.title)}</strong>
         <span class="completed-platform">${completedBadges(game)}</span>
-        <span>${escapeHtml(historyRangeText(game))}</span>
         ${completedDurationLine(game)}
+        <span>${escapeHtml(historyRangeText(game))}</span>
       </div>
       <button class="icon-button history-edit-action" type="button" title="Edit" aria-label="Edit">${pencilIcon()}</button>
     </div>
@@ -6159,9 +6237,11 @@ function completedGamesForYear(year) {
 
 function gameOfTheYearCandidateGames(year) {
   const games = new Map();
-  completedGamesForYear(year).forEach((game) => games.set(game.id, game));
+  completedGamesForYear(year)
+    .filter((game) => !game.dlc)
+    .forEach((game) => games.set(game.id, game));
   activeGames()
-    .filter((game) => game.playing)
+    .filter((game) => game.playing && !game.dlc)
     .forEach((game) => games.set(game.id, game));
   return [...games.values()];
 }
@@ -6182,6 +6262,8 @@ function addedTimeValue(game) {
 }
 
 function completedPlaytimeValue(game) {
+  const finishHours = finishHoursValue(game?.finishHours);
+  if (finishHours) return finishHours * 60 * 60 * 1000;
   const start = Date.parse(dateOnly(game.startedAt));
   const done = Date.parse(dateOnly(game.completedAt));
   if (Number.isNaN(start) || Number.isNaN(done)) return 0;
@@ -6207,9 +6289,27 @@ function historyRangeText(game) {
   return "No dates";
 }
 
+function finishedDateText(game) {
+  return [finishHoursText(game) || finishedDurationText(game.startedAt, game.completedAt), formatLongDate(game.completedAt)].filter(Boolean).join(" · ");
+}
+
 function completedDurationLine(game) {
-  const duration = finishedDurationText(game.startedAt, game.completedAt);
+  const duration = finishHoursText(game) || finishedDurationText(game.startedAt, game.completedAt);
   return duration ? `<span class="completed-duration">${escapeHtml(duration)}</span>` : "";
+}
+
+function finishHoursValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return 0;
+  const match = raw.match(/^\d+/);
+  const count = Number(match ? match[0] : raw);
+  return Number.isInteger(count) ? Math.max(0, count) : 0;
+}
+
+function finishHoursText(game) {
+  const hours = finishHoursValue(game?.finishHours);
+  if (!hours) return "";
+  return `${hours} ${hours === 1 ? "hr" : "hrs"}`;
 }
 
 function nextReplayCountForTitle(title, currentId = "") {
@@ -6265,6 +6365,7 @@ function filteredGames(options = {}) {
       game.preferredStore,
       game.developer,
       game.publisher,
+      game.dlc ? "dlc expansion expansions downloadable content" : "",
       game.digital ? "digital" : "",
       game.coop ? "coop" : "",
       game.platinum ? "completed trophy platinum" : "",
@@ -6955,7 +7056,8 @@ function sectionRank(section) {
 function metaFor(game, options = {}) {
   const values = [];
   if (game.platform) values.push(platformBadge(game.platform, null, { title: game.title }));
-  if (game.digital) values.push(`<span class="digital-pill">Digital</span>`);
+  if (game.dlc) values.push(dlcBadge(game));
+  if (game.digital && !game.dlc) values.push(`<span class="digital-pill">Digital</span>`);
   if (game.emulator) values.push(`<span class="emulator-pill">Emulator</span>`);
   if (game.lengthHours) values.push(timeBadge(game.lengthHours, hltbUrlFor(game)));
   if (game.stream) values.push(`<span class="stream-pill">Stream</span>`);
@@ -7567,7 +7669,8 @@ function completedBadges(game, options = {}) {
   const progress = achievementProgressForGame(game);
   return [
     game.platform ? platformBadge(game.platform, null, { title: game.title }) : "",
-    game.digital ? `<span class="digital-pill">Digital</span>` : "",
+    game.dlc ? dlcBadge(game) : "",
+    game.digital && !game.dlc ? `<span class="digital-pill">Digital</span>` : "",
     game.emulator ? `<span class="emulator-pill">Emulator</span>` : "",
     game.coop ? `<span class="coop-pill">Coop</span>` : "",
     game.stream ? `<span class="stream-pill">Stream</span>` : "",
@@ -7583,7 +7686,8 @@ function playDatesFor(game, options = {}) {
   if (release) values.push(releaseStatusPill(release));
   if (game.startedAt) values.push(`<span class="history-pill history-date-pill"><small>Started</small><strong>${escapeHtml(formatDate(game.startedAt))}</strong></span>`);
   if (game.completedAt) values.push(`<span class="history-pill history-date-pill"><small>Finished</small><strong>${escapeHtml(formatDate(game.completedAt))}</strong></span>`);
-  const duration = finishedDurationText(game.startedAt, game.completedAt);
+  const finishTime = finishHoursText(game);
+  const duration = finishTime || finishedDurationText(game.startedAt, game.completedAt);
   if (duration) values.push(`<span class="history-pill history-date-pill"><small>Time</small><strong>${escapeHtml(duration)}</strong></span>`);
   return values;
 }
@@ -7647,6 +7751,15 @@ function platformBadge(platform, count = null, options = {}) {
       ${count == null ? "" : `<span class="platform-count">${count}</span>`}
     </span>
   `;
+}
+
+function dlcBadge(game, label = "DLC", options = {}) {
+  const platform = typeof game === "string" ? game : game?.platform;
+  const title = typeof game === "object" ? game?.title : "";
+  const cls = options.tone === "accent" ? "dlc-accent" : platformClass(platform, { title });
+  const className = ["dlc-pill", cls, options.className || ""].filter(Boolean).join(" ");
+  const platformLabel = platformDisplayName(platform);
+  return `<span class="${escapeHtml(className)}" title="${escapeHtml([label, platformLabel].filter(Boolean).join(" - "))}">${escapeHtml(label)}</span>`;
 }
 
 function ownerBadge(owner) {
@@ -8190,12 +8303,14 @@ function normalizeGameRecord(game) {
   normalized.editedAt = String(normalized.editedAt || normalized.updatedAt || normalized.createdAt || "");
   normalized.cover = MANUAL_GAME_COVER_OVERRIDES[normalizeTag(normalized.title)] || normalized.cover || "";
   normalized.digital = Boolean(normalized.digital);
+  normalized.dlc = Boolean(normalized.dlc);
   normalized.emulator = Boolean(normalized.emulator);
   normalized.coop = Boolean(normalized.coop);
   normalized.stream = Boolean(normalized.stream);
   normalized.platinum = Boolean(normalized.platinum);
   normalized.playing = Boolean(normalized.playing);
   normalized.replayCount = replayCountValue(normalized.replayCount);
+  normalized.finishHours = finishHoursValue(normalized.finishHours);
   normalized.startedAt = dateOnly(normalized.startedAt);
   normalized.completedAt = dateOnly(normalized.completedAt);
   normalized.platform = canonicalPlatform(normalized.platform);
@@ -8279,6 +8394,7 @@ function normalizeStoreLinks(links) {
   return {
     playstation: String(value.playstation || ""),
     nintendo: String(value.nintendo || ""),
+    xbox: String(value.xbox || ""),
     steam: String(value.steam || ""),
   };
 }
@@ -8330,7 +8446,7 @@ function storeLinksWithFallbacks(game) {
     playstation: regionalStoreLink(links.playstation, "playstation", q, region),
     nintendo: regionalStoreLink(links.nintendo, "nintendo", q, region),
     steam: links.steam || `https://store.steampowered.com/search/?term=${q}`,
-    xbox: xboxSearchUrl(q, region),
+    xbox: links.xbox || xboxSearchUrl(q, region),
   };
 }
 
@@ -8541,6 +8657,55 @@ function storeIcon(store) {
   return "";
 }
 
+function syncEditFieldIcons() {
+  syncPlatformInputIcon();
+  syncStoreInputIcon(el.fields.preorderStore, el.preorderStoreFieldIcon);
+  syncStoreInputIcon(el.fields.preferredStore, el.preferredStoreFieldIcon);
+}
+
+function syncPlatformInputIcon() {
+  const raw = String(el.fields.platform?.value || "").trim();
+  const platform = canonicalPlatform(raw) || raw;
+  const icon = platform && platformLogo(platform);
+  setLeadingFieldIcon(el.platformFieldIcon, icon && icon !== "assets/Icon.png" ? icon : "", platformDisplayName(platform));
+}
+
+function syncStoreInputIcon(input, slot) {
+  const store = knownStoreIconName(input?.value);
+  setLeadingFieldIcon(slot, store ? storeIcon(store) : "", store);
+}
+
+function knownStoreIconName(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const normalized = normalizeTag(raw);
+  const exact = STORE_OPTIONS.find((store) => normalizeTag(store) === normalized);
+  if (exact) return exact;
+  if (normalized.startsWith("amazon")) return "Amazon";
+  if (normalized === "ebay" || normalized === "e bay") return "eBay";
+  if (normalized === "game" || normalized === "game es") return "GAME.es";
+  if (normalized === "xtralife" || normalized === "xtra life") return "Xtralife";
+  if (normalized === "retro island" || normalized === "retro island ny") return "Retro Island NY";
+  if (normalized === "gamestop" || normalized === "game stop") return "GameStop";
+  if (normalized === "walmart" || normalized === "wallmart") return "Walmart";
+  if (normalized.startsWith("nintendo")) return "Nintendo";
+  if (normalized.startsWith("playstation") || normalized.startsWith("play station")) return "PlayStation";
+  if (normalized === "steam") return "Steam";
+  if (normalized === "xbox") return "Xbox";
+  return "";
+}
+
+function setLeadingFieldIcon(slot, icon, title = "", extraClass = "") {
+  const wrapper = slot?.closest?.(".icon-input");
+  if (!slot || !wrapper) return;
+  const baseClasses = String(slot.dataset.baseClass || slot.className || "field-leading-icon").split(/\s+/).filter(Boolean);
+  slot.dataset.baseClass = baseClasses.join(" ");
+  slot.className = unique([...baseClasses, ...String(extraClass || "").split(/\s+/).filter(Boolean)]).join(" ");
+  wrapper.classList.toggle("has-icon", Boolean(icon));
+  slot.title = icon ? title : "";
+  slot.innerHTML = icon ? `<img src="${escapeHtml(icon)}" alt="" width="18" height="18" decoding="async">` : "";
+}
+
 function releaseStatus(game, options = {}) {
   return activityReleaseStatus(game, options);
 }
@@ -8612,19 +8777,21 @@ async function openEditor(id = "") {
   el.fields.id.value = game.id || "";
   el.fields.title.value = game.title || "";
   el.fields.platform.value = game.platform || "";
+  el.fields.dlc.checked = Boolean(game.dlc);
   el.fields.section.value = game.section === "new" ? "backlog" : game.section || "wanted";
   el.fields.releaseDate.value = game.releaseDate || "";
   el.fields.releaseText.value = game.releaseText || "";
   el.fields.length.value = game.lengthHours || "";
   el.fields.startedAt.value = dateOnly(game.startedAt);
   el.fields.completedAt.value = dateOnly(game.completedAt);
+  el.fields.finishHours.value = game.finishHours || "";
   el.fields.replayCount.value = game.replayCount || "";
   el.fields.platinum.checked = Boolean(game.platinum);
   el.fields.preorderStore.value = game.preorderStore || "";
   el.fields.preferredStore.value = game.preferredStore || "";
   el.fields.owners.value = ownerTags(game).join(", ");
   el.fields.statuses.value = gameStatuses(game).join(", ");
-  el.fields.digital.checked = Boolean(game.digital);
+  el.fields.digital.checked = Boolean(game.digital || game.dlc);
   if (el.fields.emulator) el.fields.emulator.checked = Boolean(game.emulator);
   el.fields.coop.checked = Boolean(game.coop);
   if (el.fields.stream) el.fields.stream.checked = Boolean(game.stream);
@@ -8638,10 +8805,12 @@ async function openEditor(id = "") {
   el.fields.trailerUrl.value = game.trailerUrl || "";
   el.fields.playstationUrl.value = game.storeLinks?.playstation || "";
   el.fields.nintendoUrl.value = game.storeLinks?.nintendo || "";
+  el.fields.xboxUrl.value = game.storeLinks?.xbox || "";
   el.fields.steamUrl.value = game.storeLinks?.steam || "";
   el.fields.steamAppId.value = game.steamAppId || steamAppIdFromUrl(game.storeLinks?.steam || "");
   el.fields.cover.value = game.cover || "";
   el.fields.notes.value = game.notes || "";
+  syncEditFieldIcons();
   syncDialogPriceVisibility();
   syncStyledSelect(el.fields.section, { activeValue: null });
   pauseAllPlayingTrailers();
@@ -8666,10 +8835,12 @@ function blankGame() {
     id: crypto.randomUUID(),
     title: "",
     platform: "",
+    dlc: false,
     section: "wanted",
     releaseDate: "",
     releaseText: "",
     lengthHours: null,
+    finishHours: 0,
     notes: "",
     description: "",
     statuses: [],
@@ -8688,7 +8859,7 @@ function blankGame() {
     igdbUrl: "",
     trailerUrl: "",
     steamAppId: "",
-    storeLinks: { playstation: "", nintendo: "", steam: "" },
+    storeLinks: { playstation: "", nintendo: "", xbox: "", steam: "" },
     owners: [state.settings.defaultOwner || DEFAULT_SETTINGS.defaultOwner],
     preorderStore: "",
     preferredStore: "",
@@ -8734,17 +8905,19 @@ async function saveCurrentFormGame() {
     id,
     title: el.fields.title.value.trim(),
     platform: canonicalPlatform(el.fields.platform.value),
+    dlc: el.fields.dlc.checked,
     section,
     releaseDate: el.fields.releaseDate.value,
     releaseText: el.fields.releaseText.value.trim(),
     lengthHours: el.fields.length.value ? Number(el.fields.length.value) : null,
+    finishHours: finishHoursValue(el.fields.finishHours.value),
     startedAt,
     completedAt: effectiveCompletedAt,
     preorderStore: el.fields.preorderStore.value.trim(),
     preferredStore: el.fields.preferredStore.value.trim(),
     owners: ownerInputValues(el.fields.owners.value),
     statuses: listFrom(el.fields.statuses.value).map(canonicalStatus).filter(Boolean),
-    digital: el.fields.digital.checked,
+    digital: el.fields.dlc.checked || el.fields.digital.checked,
     emulator: Boolean(el.fields.emulator?.checked),
     coop: el.fields.coop.checked,
     stream: Boolean(el.fields.stream?.checked),
@@ -8763,6 +8936,7 @@ async function saveCurrentFormGame() {
     storeLinks: {
       playstation: el.fields.playstationUrl.value.trim(),
       nintendo: el.fields.nintendoUrl.value.trim(),
+      xbox: el.fields.xboxUrl.value.trim(),
       steam: el.fields.steamUrl.value.trim(),
     },
     cover: el.fields.cover.value.trim(),
@@ -8784,9 +8958,14 @@ function syncDialogPriceVisibility() {
   const draft = {
     section: el.fields.section.value,
     platform: el.fields.platform.value,
-    digital: el.fields.digital.checked,
+    digital: el.fields.dlc.checked || el.fields.digital.checked,
   };
   if (el.pricesButton) el.pricesButton.hidden = draft.section === "backlog" || !priceProvidersForGame(draft).length;
+}
+
+function syncDlcDigital() {
+  if (el.fields.dlc.checked) el.fields.digital.checked = true;
+  syncDialogPriceVisibility();
 }
 
 function syncReplaySection() {
@@ -8849,25 +9028,66 @@ function isShelfNewAddition(game) {
   return Boolean(game?.section === "new" && game.shelfId);
 }
 
-function completeGame(id) {
+async function completeGame(id) {
   const game = getGame(id);
   if (!game?.playing) return;
+  const finishHours = await requestFinishHours(game);
+  if (finishHours === undefined) return;
   game.startedAt = game.startedAt || todayDate();
   game.completedAt = todayDate();
+  if (finishHours !== null) game.finishHours = finishHours;
   game.playing = false;
   markGameEdited(game);
   upsertGame(game);
 }
 
-function completeGameWithTrophy(id) {
+async function completeGameWithTrophy(id) {
   const game = getGame(id);
   if (!game?.playing) return;
+  const finishHours = await requestFinishHours(game);
+  if (finishHours === undefined) return;
   game.startedAt = game.startedAt || todayDate();
   game.completedAt = game.completedAt || todayDate();
+  if (finishHours !== null) game.finishHours = finishHours;
   game.playing = false;
   game.platinum = true;
   markGameEdited(game);
   upsertGame(game);
+}
+
+function requestFinishHours(game) {
+  if (!el.finishTimeDialog || !el.finishTimeForm || !el.finishTimeInput) return Promise.resolve(null);
+  const current = finishHoursValue(game?.finishHours);
+  el.finishTimeInput.value = current ? String(current) : "";
+  if (el.finishTimeError) el.finishTimeError.hidden = true;
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      el.finishTimeForm.removeEventListener("submit", handleSubmit);
+      el.finishTimeDialog.removeEventListener("close", handleClose);
+    };
+    const handleSubmit = (event) => {
+      event.preventDefault();
+      const value = el.finishTimeInput.value.trim();
+      const hours = finishHoursValue(value);
+      if (value && !hours) {
+        if (el.finishTimeError) el.finishTimeError.hidden = false;
+        return;
+      }
+      cleanup();
+      el.finishTimeDialog.close("submit");
+      resolve(value ? hours : null);
+    };
+    const handleClose = () => {
+      const action = el.finishTimeDialog.returnValue;
+      cleanup();
+      resolve(action === "skip" ? null : undefined);
+    };
+    el.finishTimeForm.addEventListener("submit", handleSubmit);
+    el.finishTimeDialog.addEventListener("close", handleClose, { once: true });
+    el.finishTimeDialog.showModal();
+    syncScrollLock();
+    requestAnimationFrame(() => el.finishTimeInput.focus());
+  });
 }
 
 function restoreCompletedToBacklog(id) {
@@ -9115,6 +9335,7 @@ function applyLookup(result) {
   const links = normalizeStoreLinks(result.storeLinks);
   el.fields.playstationUrl.value = links.playstation || el.fields.playstationUrl.value;
   el.fields.nintendoUrl.value = links.nintendo || el.fields.nintendoUrl.value;
+  el.fields.xboxUrl.value = links.xbox || el.fields.xboxUrl.value;
   el.fields.steamUrl.value = links.steam || el.fields.steamUrl.value;
   el.fields.steamAppId.value = steamAppIdFromUrl(el.fields.steamUrl.value) || el.fields.steamAppId.value;
   const current = state.games.find((game) => game.id === el.fields.id.value);
@@ -9124,6 +9345,7 @@ function applyLookup(result) {
   if (result.developer) el.fields.developer.value = result.developer;
   if (result.publisher) el.fields.publisher.value = result.publisher;
   if (result.platform && !el.fields.platform.value) el.fields.platform.value = result.platform;
+  syncEditFieldIcons();
   if (!el.fields.id.value && !el.fields.replayCount.value) {
     const replayCount = nextReplayCountForTitle(el.fields.title.value);
     if (replayCount) {

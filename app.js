@@ -4647,7 +4647,7 @@ function completedStatDetail(year, yearCount, total, completedYearCount, expansi
   return `
     <div class="stat-detail">
       <span>${yearCount} ${yearCount === 1 ? "game" : "games"} in ${escapeHtml(year)}${escapeHtml(expansionText)}</span>
-      ${completedYearCount ? `<span class="completed-year-count-pill">${completedYearCount} completed of ${yearCount} this year</span>` : ""}
+      ${completedYearCount ? `<span class="completed-year-count-pill">${trophyIcon()}${completedYearCount} completed of ${yearCount} this year</span>` : ""}
       <b>Total ${total} finished ${total === 1 ? "game" : "games"}</b>
     </div>
   `;
@@ -4675,7 +4675,7 @@ function preorderCountPill(count, summary) {
   const title = summary.map(([store, storeCount]) => `${store}: ${storeCount}`).join("\n");
   return `
     <span class="preorder-count-pill preorder-count-tooltip" tabindex="0" title="${escapeHtml(title)}">
-      ${count} preordered
+      ${shoppingBagIcon()}${count} preordered
       <span class="preorder-store-list" role="tooltip">${rows}</span>
     </span>
   `;
@@ -4700,7 +4700,7 @@ function renderReleaseCalendar() {
 
 function openReleaseDialog(date, games = []) {
   if (!games.length) return;
-  el.releaseDialogTitle.textContent = formatLongDate(date);
+  el.releaseDialogTitle.innerHTML = `${calendarMiniIcon()}<span>${escapeHtml(formatLongDate(date))}</span>`;
   el.releaseDialogList.innerHTML = "";
   games.forEach((game) => el.releaseDialogList.appendChild(cardFor(game, { staticCard: true, includePastRelease: true, releaseDialog: true })));
   el.releaseDialog.showModal();
@@ -5217,13 +5217,13 @@ function rowCoreStats(game) {
     game.platform ? platformBadge(game.platform, null, { title: game.title }) : "",
     game.dlc ? dlcBadge(game) : "",
     mediaFormatBadge(game),
+    game.coop ? `<span class="coop-pill">Coop</span>` : "",
     game.emulator ? `<span class="emulator-pill">Emulator</span>` : "",
     game.lengthHours ? timeBadge(game.lengthHours, hltbUrlFor(game)) : "",
-    game.preorderStore ? preorderChip(game.preorderStore) : "",
     game.stream ? `<span class="stream-pill">Stream</span>` : "",
     release ? releaseStatusPill(release) : "",
+    game.preorderStore ? preorderChip(game.preorderStore) : "",
     ...gameStatuses(game).map(statusBadge),
-    game.coop ? `<span class="coop-pill">Coop</span>` : "",
     game.replayCount ? replayBadge(game.replayCount) : "",
     progress ? psnProgressBadge(progress) : "",
   ].filter(Boolean).join("");
@@ -6438,7 +6438,7 @@ function cardFor(game, options = {}) {
   studioLine.hidden = !studioLine.textContent;
   card.querySelector(".meta").innerHTML = metaFor(game, { includePsn: neutralReleaseCard || !game.playing }).join("");
   const playDates = card.querySelector(".play-dates");
-  playDates.innerHTML = playDatesFor(game, { includePastRelease: Boolean(options.includePastRelease), includeRelease: !releaseDialog }).join("");
+  playDates.innerHTML = playDatesFor(game, { includePastRelease: Boolean(options.includePastRelease), includeRelease: !releaseDialog, includePreorder: !releaseDialog }).join("");
   playDates.hidden = !playDates.innerHTML;
   card.querySelector(".chips").innerHTML = cardChipsFor(game).join("");
   const trophyStrip = card.querySelector(".card-trophies");
@@ -7688,6 +7688,7 @@ function playDatesFor(game, options = {}) {
   const formatDate = game.completedAt ? formatLongDate : formatShortDate;
   const release = options.includeRelease === false ? "" : releaseStatus(game, { includePast: options.includePastRelease });
   if (release) values.push(releaseStatusPill(release));
+  if (options.includePreorder && game.preorderStore) values.push(preorderChip(game.preorderStore));
   if (game.startedAt) values.push(`<span class="history-pill history-date-pill"><small>Started</small><strong>${escapeHtml(formatDate(game.startedAt))}</strong></span>`);
   if (game.completedAt) values.push(`<span class="history-pill history-date-pill"><small>Finished</small><strong>${escapeHtml(formatDate(game.completedAt))}</strong></span>`);
   const finishTime = finishHoursText(game);
@@ -7805,7 +7806,13 @@ function mediaFormatBadge(game) {
   if (game.digital) {
     return `<span class="digital-pill media-format-pill ${escapeHtml(cls)}" title="Digital" aria-label="Digital">${downloadBadgeIcon()}</span>`;
   }
-  return `<span class="digital-pill physical-pill media-format-pill ${escapeHtml(cls)}" title="Physical" aria-label="Physical"><img src="assets/platforms/disk.png" alt="" width="18" height="18" decoding="async"></span>`;
+  return `<span class="digital-pill physical-pill media-format-pill ${escapeHtml(cls)}" title="Physical" aria-label="Physical">${physicalDiskIcon(cls)}</span>`;
+}
+
+function physicalDiskIcon(platformClassName = "") {
+  const ps5 = /\bplatform-ps5\b/.test(platformClassName);
+  const src = ps5 ? "assets/platforms/disk-inverted.png" : "assets/platforms/disk.png";
+  return `<img src="${src}" alt="" width="18" height="18" decoding="async">`;
 }
 
 function pencilIcon() {
@@ -8109,7 +8116,10 @@ function chipsFor(game) {
 }
 
 function cardChipsFor(game) {
-  return chipsFor(game);
+  const chips = [];
+  if (game.preferredStore) chips.push(chip(`Buy: ${game.preferredStore}`));
+  (game.genres || []).slice(0, 4).forEach((genre) => chips.push(chip(genre, "genre")));
+  return chips;
 }
 
 function preorderChip(store) {

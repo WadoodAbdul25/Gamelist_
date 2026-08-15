@@ -5215,7 +5215,7 @@ function rowFor(game, section, options = {}) {
 function rowPrimaryAction(game, section) {
   if (section === "backlog") return `<button class="primary-button row-primary-action" type="button">Play</button>`;
   if (section === "new") {
-    return `<button class="primary-button row-primary-action" type="button">Play</button><button class="ghost-button row-setup-action" type="button">Finish setup</button>`;
+    return `<button class="primary-button row-primary-action" type="button">Play</button><button class="primary-button row-setup-action" type="button">Setup</button>`;
   }
   return `<button class="ghost-button row-primary-action" type="button">Got it</button>`;
 }
@@ -6497,7 +6497,9 @@ function cardFor(game, options = {}) {
     priceRefreshAction.remove();
     backlogAction.remove();
     trophyAction.remove();
-    boughtAction.textContent = "Finish setup";
+    boughtAction.textContent = "Setup";
+    boughtAction.classList.remove("ghost-button");
+    boughtAction.classList.add("primary-button");
     boughtAction.addEventListener("click", () => finishSetupGame(game.id));
     completeAction.innerHTML = `<span class="action-label">Play</span>`;
     completeAction.addEventListener("click", () => startPlaying(game.id));
@@ -7767,14 +7769,18 @@ function compareGames(a, b, section) {
   const streamSort = compareStreamFirst(a, b);
   if (streamSort) return streamSort;
   if (Boolean(a.playing) !== Boolean(b.playing)) return a.playing ? -1 : 1;
-  if (section === "upcoming") {
-    return compareReleaseDates(a, b) || stringCompare(a.title, b.title);
-  }
   if (state.filters.sort === "platform") {
     return direction * (stringCompare(canonicalPlatform(a.platform), canonicalPlatform(b.platform)) || stringCompare(a.title, b.title));
   }
   if (state.filters.sort === "added") {
     return direction * (addedTimeValue(a) - addedTimeValue(b) || stringCompare(a.title, b.title));
+  }
+  if (state.filters.sort === "time" && section === "upcoming") {
+    const aRelease = releaseSortValue(a);
+    const bRelease = releaseSortValue(b);
+    if (!Number.isFinite(aRelease)) return Number.isFinite(bRelease) ? 1 : direction * stringCompare(a.title, b.title);
+    if (!Number.isFinite(bRelease)) return -1;
+    return direction * ((aRelease - bRelease) || stringCompare(a.title, b.title));
   }
   if (state.filters.sort === "time" || state.filters.sort === "playtime") {
     return direction * (((a.lengthHours ?? Number.POSITIVE_INFINITY) - (b.lengthHours ?? Number.POSITIVE_INFINITY))

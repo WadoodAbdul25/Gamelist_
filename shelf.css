@@ -162,8 +162,9 @@ body:not(.can-edit) .showcase-edit-button {
   margin: 0;
   color: transparent;
   font-family: var(--display-title-font);
-  font-size: var(--display-title-size, clamp(28px, 4vw, 48px));
-  line-height: var(--display-title-line-height, 0.95);
+  font-size: var(--display-title-size, clamp(28px, 2.5vw, 38px));
+  font-weight: 900;
+  line-height: var(--display-title-line-height, 1.05);
   letter-spacing: var(--display-title-letter-spacing, 0);
   background: var(--accent);
   -webkit-background-clip: text;
@@ -1073,7 +1074,7 @@ html.theme-font-mata .shelf-page .playing-section .column-head h2 {
   display: grid;
   grid-template-columns: repeat(var(--tab-count), minmax(0, 1fr));
   gap: 6px;
-  margin: 0 0 12px;
+  margin: 14px 0 18px;
   padding: 6px;
   overflow-y: hidden;
   overflow-x: hidden;
@@ -1098,11 +1099,11 @@ html.theme-font-mata .shelf-page .playing-section .column-head h2 {
   position: absolute;
   inset: 6px auto 6px 6px;
   z-index: 0;
-  width: var(--tab-width);
+  width: var(--tab-active-width, var(--tab-width));
   border-radius: 7px;
   background: var(--accent);
   box-shadow: 0 3px 24px color-mix(in srgb, var(--accent) 42%, transparent);
-  transform: translateX(calc(var(--tab-index) * (100% + 6px)));
+  transform: translateX(var(--tab-left, calc(var(--tab-index) * (100% + 6px))));
   transition: transform 180ms ease;
   pointer-events: none;
 }
@@ -1131,6 +1132,11 @@ html.theme-font-mata .shelf-page .playing-section .column-head h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.shelf-tabs button[data-shelf-tab="preorders"],
+.shelf-tabs button[data-shelf-tab="new"] {
+  gap: 10px;
 }
 
 .shelf-tabs button .count {
@@ -1705,8 +1711,10 @@ textarea {
 }
 .shelf-library > .column-head {
   min-height: 0;
-  justify-content: flex-end;
-  padding: 0 2px 8px;
+  justify-content: flex-start;
+  margin-top: 26px;
+  margin-bottom: 4px;
+  padding: 16px 2px 4px;
 }
 
 @media (max-width: 1180px) {
@@ -1845,6 +1853,20 @@ textarea {
   }
   .shelf-tabs {
     top: calc(25px + var(--pull-ui-offset, 0px));
+    margin: 12px 0 16px;
+  }
+
+  .shelf-tabs.sync-preorders-enabled:has(button[data-shelf-tab="new"]) {
+    grid-template-columns: minmax(34px, 42px) repeat(var(--compact-tab-count), minmax(0, 1fr));
+  }
+
+  .shelf-tabs.sync-preorders-enabled button[data-shelf-tab="new"] {
+    min-width: 0;
+    padding: 0;
+  }
+
+  .shelf-tabs.sync-preorders-enabled button[data-shelf-tab="new"] .label {
+    display: none;
   }
 
   .shelf-tabs button {
@@ -1854,7 +1876,12 @@ textarea {
   }
 
   .shelf-tabs button .label {
-    font-size: 11px;
+    font-size: 15px;
+  }
+
+  .shelf-tabs button[data-shelf-tab="preorders"],
+  .shelf-tabs button[data-shelf-tab="new"] {
+    gap: 7px;
   }
 
   .shelf-tabs button .count {

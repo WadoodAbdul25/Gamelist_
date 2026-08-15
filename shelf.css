@@ -145,7 +145,17 @@ body:not(.can-edit) .showcase-edit-button {
 }
 
 .shelf-library .column-head {
+  justify-content: flex-start;
   margin-bottom: 12px;
+}
+
+.shelf-library .column-head > span {
+  margin-left: auto;
+}
+
+.shelf-library .column-head h2 {
+  flex: 0 1 auto;
+  text-align: left;
 }
 
 .shelf-page .column-head h2 {
@@ -1834,8 +1844,24 @@ textarea {
     height: var(--toolbar-control-height);
   }
   .shelf-tabs {
-    --tab-width: calc((100% - 18px) / 2);
     top: calc(25px + var(--pull-ui-offset, 0px));
+  }
+
+  .shelf-tabs button {
+    gap: 3px;
+    min-width: 0;
+    padding-inline: 3px;
+  }
+
+  .shelf-tabs button .label {
+    font-size: 11px;
+  }
+
+  .shelf-tabs button .count {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    font-size: 10px;
   }
   .shelf-grid {
     grid-template-columns: 1fr;

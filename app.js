@@ -69,6 +69,7 @@ const DEFAULT_SETTINGS = {
   shelfSync: true,
   hidePageSwitch: false,
   forceCacheOnLoad: false,
+  syncPreorders: false,
   gotyAlwaysShow: false,
   gameOfTheYear: {},
   weekStart: "monday",
@@ -1232,6 +1233,7 @@ function normalizeSettings(settings = {}) {
     shelfSync: settings.shelfSync !== false,
     hidePageSwitch: settings.hidePageSwitch === true,
     forceCacheOnLoad: settings.forceCacheOnLoad === true,
+    syncPreorders: settings.syncPreorders === true,
     gotyAlwaysShow: settings.gotyAlwaysShow === true,
     gameOfTheYear,
     weekStart: normalizeWeekStart(settings.weekStart),
@@ -1621,6 +1623,10 @@ function settingsDevFeaturesItem(kind) {
     </a>
   `).join("");
   return `${links}
+    <label class="check-filter toggle-check settings-visible-check settings-dev-toggle" title="Sync preorders to Shelf">
+      <input type="checkbox" id="settingsSyncPreorders" ${state.settings.syncPreorders ? "checked" : ""}>
+      <span>Sync preorders</span>
+    </label>
     <label class="check-filter toggle-check settings-visible-check settings-dev-toggle" title="${escapeHtml(tt("Force cache on page load"))}">
       <input type="checkbox" id="settingsForceCacheOnLoad" ${state.settings.forceCacheOnLoad ? "checked" : ""}>
       <span>${escapeHtml(tt("Force cache on page load"))}</span>
@@ -2054,6 +2060,7 @@ async function saveSettingsFromForm(event) {
     hidePageSwitch: el.settingsLayoutList.querySelector("[data-hide-page-switch]")?.checked === true,
     weekStart: normalizeWeekStart(el.settingsLayoutList.querySelector("[data-week-start]")?.value || state.settings.weekStart),
     forceCacheOnLoad: document.querySelector("#settingsForceCacheOnLoad")?.checked === true,
+    syncPreorders: document.querySelector("#settingsSyncPreorders")?.checked === true,
     gotyAlwaysShow: document.querySelector("#settingsGotyAlwaysShow")?.checked === true,
   });
   persistLocalSettings();
@@ -4777,7 +4784,7 @@ function mobileSections() {
 
 function mobileSectionCounts() {
   const games = filteredGames().filter((game) => !game.completedAt && !game.playing);
-  return Object.fromEntries(mobileSections().map((section) => [section, games.filter((game) => game.section === section).length]));
+  return Object.fromEntries(mobileSections().map((section) => [section, games.filter((game) => section === "new" ? isNewAdditionGame(game) : game.section === section).length]));
 }
 
 function mobileSectionLabel(section) {
@@ -4790,7 +4797,11 @@ function mobileSectionLabel(section) {
 }
 
 function hasNewAdditions() {
-  return canSeeNewAdditions() && state.games.some((game) => !game.deletedAt && !game.completedAt && !game.playing && game.section === "new");
+  return canSeeNewAdditions() && state.games.some((game) => !game.deletedAt && !game.completedAt && !game.playing && isNewAdditionGame(game));
+}
+
+function isNewAdditionGame(game) {
+  return game?.section === "new" || game?.preorderNewAddition === true;
 }
 
 function canSeeNewAdditions() {
@@ -4829,13 +4840,13 @@ function syncMobileSectionToResults() {
   if (!hasActiveFilter) return;
   const sections = state.filters.preordered ? mobileSections().filter((section) => section !== "new").sort((a, b) => ["upcoming", "backlog", "wanted"].indexOf(a) - ["upcoming", "backlog", "wanted"].indexOf(b)) : mobileSections();
   const hasCurrent = filteredGames().some((game) => (
-    game.section === state.mobileSection
+    (state.mobileSection === "new" ? isNewAdditionGame(game) : game.section === state.mobileSection)
     && !game.completedAt
     && !game.playing
   ));
   if (hasCurrent) return;
   const next = sections.find((section) => filteredGames().some((game) => (
-    game.section === section
+    (section === "new" ? isNewAdditionGame(game) : game.section === section)
     && !game.completedAt
     && !game.playing
   )));
@@ -5089,7 +5100,7 @@ function renderSection(section) {
   const list = document.querySelector(`.card-list[data-section="${section}"]`);
   const column = document.querySelector(`#${CSS.escape(section)}`);
   if (!list) return;
-  const games = filteredGames().filter((game) => game.section === section && !game.completedAt && !game.playing);
+  const games = filteredGames().filter((game) => (section === "new" ? isNewAdditionGame(game) : game.section === section) && !game.completedAt && !game.playing);
   if (column && section === "new") column.hidden = !canSeeNewAdditions() || !games.length;
   games.sort((a, b) => compareGames(a, b, section));
   list.innerHTML = "";
@@ -5104,7 +5115,7 @@ function renderSection(section) {
   games.forEach((game, index) => {
     fragment.appendChild(state.viewMode === "list"
       ? rowFor(game, section, { imagePriority: index < 10 ? "eager" : "lazy" })
-      : cardFor(game, { imagePriority: index < 6 ? "eager" : "lazy" }));
+      : cardFor(game, { imagePriority: index < 6 ? "eager" : "lazy", displaySection: section }));
   });
   list.appendChild(fragment);
   if (state.viewMode === "list") requestAnimationFrame(() => updateRowTitleOverflow(list));
@@ -5166,8 +5177,7 @@ function rowFor(game, section, options = {}) {
     </span>
     <div class="game-row-identity">
       <strong class="${game.platinum ? "completed-achievements-title" : ""} ${ownerTitleClasses(owners)}" tabindex="0">${escapeHtml(game.title)}</strong>
-      <span class="game-row-owner-line">${visibleOwnerTags(game).map(ownerBadge).join("")}</span>
-      ${studioText(game) ? `<span>${escapeHtml(studioText(game))}</span>` : ""}
+      <span class="game-row-studio-line">${visibleOwnerTags(game).map(ownerBadge).join("")}${studioText(game) ? `<span class="game-row-studio-text">${escapeHtml(studioText(game))}</span>` : ""}</span>
     </div>
     <div class="game-row-core">${rowCoreStats(game)}</div>
     <div class="game-row-tags">${rowTags(game).join("")}</div>
@@ -5215,12 +5225,12 @@ function rowCoreStats(game) {
   const release = releaseStatus(game);
   return [
     game.platform ? platformBadge(game.platform, null, { title: game.title }) : "",
-    game.dlc ? dlcBadge(game) : "",
     mediaFormatBadge(game),
-    game.coop ? `<span class="coop-pill">Coop</span>` : "",
+    game.dlc ? dlcBadge(game) : "",
+    game.coop ? coopBadge() : "",
     game.emulator ? `<span class="emulator-pill">Emulator</span>` : "",
     game.lengthHours ? timeBadge(game.lengthHours, hltbUrlFor(game)) : "",
-    game.stream ? `<span class="stream-pill">Stream</span>` : "",
+    game.stream ? streamBadge() : "",
     release ? releaseStatusPill(release) : "",
     game.preorderStore ? preorderChip(game.preorderStore) : "",
     ...gameStatuses(game).map(statusBadge),
@@ -5441,7 +5451,7 @@ function finishedStatsMarkup(year, games, completed) {
     expansions.length ? statsKpiCard("Expansions finished", expansions.length, statsGameList(expansions), { tone: "finished" }) : "",
     statsKpiCard("Completed games", completed.length, showYearlyDetail ? statsCompletedGameList(completed) : "", { action: "completed", tone: "completed", icon: trophyIcon() }),
     streamed.length ? statsKpiCard("Streamed games", streamed.length, showYearlyDetail ? statsGameList(streamed) : "", { tone: "streamed" }) : "",
-    coopGames.length ? statsKpiCard("Coop games", coopGames.length, statsGameList(coopGames), { tone: "coop" }) : "",
+    coopGames.length ? statsKpiCard("CoOp games", coopGames.length, statsGameList(coopGames), { tone: "coop", icon: coopIcon() }) : "",
     otherOwnerGames.length ? statsKpiCard(otherOwnerSummary.label, otherOwnerGames.length, statsOwnerBreakdown(otherOwnerGames), { tone: "owners", valueClass: otherOwnerSummary.valueClass }) : "",
   ].filter(Boolean).join("");
   return `
@@ -5768,19 +5778,30 @@ function statsBreakdownRow(item, tone, index, games = []) {
       .filter((game) => physicalDigitalLabel(game) === item.label)
       .sort(statsGameListSort);
     const color = statsSegmentColor(item.label, tone, index);
-    return statsGroupedBreakdown(`<span class="finished-stats-category-row" style="--category-stat-color:${escapeHtml(color)}"><b><i></i>${escapeHtml(item.label)}</b></span>`, item.count, mediaGames);
+    return statsGroupedBreakdown(`<span class="finished-stats-category-row" style="--category-stat-color:${escapeHtml(color)}"><b>${statsMediaLabel(item.label)}</b></span>`, item.count, mediaGames);
   }
   if (tone === "platform") {
     return `<span class="finished-stats-platform-row"><b>${platformBadge(item.label)}</b><em>${item.count}</em></span>`;
   }
   if (tone === "category" || tone === "time" || tone === "media") {
     const color = statsSegmentColor(item.label, tone, index);
-    return `<span class="finished-stats-category-row" style="--category-stat-color:${escapeHtml(color)}"><b><i></i>${escapeHtml(item.label)}</b><em>${item.count}</em></span>`;
+    const label = tone === "media" ? statsMediaLabel(item.label) : `<i></i>${escapeHtml(item.label)}`;
+    return `<span class="finished-stats-category-row" style="--category-stat-color:${escapeHtml(color)}"><b>${label}</b><em>${item.count}</em></span>`;
   }
   if (tone === "owner") {
     return `<span class="finished-stats-owner-row"><b>${ownerBadge(item.label)}</b><em>${item.count}</em></span>`;
   }
   return `<span><b>${escapeHtml(item.label)}</b><em>${item.count}</em></span>`;
+}
+
+function statsMediaLabel(label) {
+  const normalized = normalizeTag(label);
+  const icon = normalized === "digital"
+    ? downloadBadgeIcon()
+    : normalized === "physical"
+      ? physicalDiskIcon()
+      : "<i></i>";
+  return `<span class="finished-stats-media-label"><span class="finished-stats-media-icon" aria-hidden="true">${icon}</span>${escapeHtml(label)}</span>`;
 }
 
 function statsGroupedBreakdown(heading, count, games) {
@@ -6392,18 +6413,20 @@ function filteredGames(options = {}) {
 
 function cardFor(game, options = {}) {
   const releaseDialog = Boolean(options.releaseDialog);
+  const displaySection = options.displaySection || game.section;
   const neutralReleaseCard = releaseDialog && Boolean(game.playing);
   const card = createGameCardShell(document);
   const statuses = gameStatuses(game);
   const owners = ownerTags(game);
   card.dataset.id = game.id;
   card.dataset.owner = statuses.join(" ");
-  card.draggable = !options.staticCard && manualDragEnabled() && ["backlog", "upcoming", "wanted"].includes(game.section);
+  card.draggable = !options.staticCard && manualDragEnabled() && ["backlog", "upcoming", "wanted"].includes(displaySection);
   applyOwnerCardClasses(card, owners);
   card.classList.toggle("digital-card", Boolean(game.digital));
   card.classList.toggle("playing-card", Boolean(game.playing) && !neutralReleaseCard);
   card.classList.toggle("stream-card", Boolean(game.stream));
   card.classList.toggle("completed-trophy-card", Boolean(game.platinum));
+  card.classList.toggle("calendar-completed-card", releaseDialog && Boolean(game.platinum));
   const trailer = card.querySelector(".card-trailer");
   const trailerUrl = !neutralReleaseCard && shouldShowCardTrailer(game) ? trailerEmbedUrl(game.trailerUrl) : "";
   if (trailerUrl) {
@@ -6431,12 +6454,15 @@ function cardFor(game, options = {}) {
   card.querySelector("h3").className = `${card.querySelector("h3").className.replace(/\bowner-[\w-]+/g, "").trim()} ${ownerTitleClasses(owners)}`.trim();
   card.querySelector("h3").classList.toggle("completed-achievements-title", Boolean(game.platinum));
   const titleOwners = card.querySelector(".title-owners");
-  titleOwners.innerHTML = visibleOwnerTags(game).map(ownerBadge).join("");
-  titleOwners.hidden = !titleOwners.innerHTML;
+  titleOwners.innerHTML = "";
+  titleOwners.hidden = true;
   const studioLine = card.querySelector(".studio-line");
-  studioLine.textContent = studioText(game);
-  studioLine.hidden = !studioLine.textContent;
-  card.querySelector(".meta").innerHTML = metaFor(game, { includePsn: neutralReleaseCard || !game.playing }).join("");
+  studioLine.innerHTML = `${visibleOwnerTags(game).map(ownerBadge).join("")}${studioText(game) ? `<span>${escapeHtml(studioText(game))}</span>` : ""}`;
+  studioLine.hidden = !studioLine.innerHTML;
+  card.querySelector(".meta").innerHTML = metaFor(game, {
+    includePsn: neutralReleaseCard || !game.playing,
+    includeCalendarState: releaseDialog,
+  }).join("");
   const playDates = card.querySelector(".play-dates");
   playDates.innerHTML = playDatesFor(game, { includePastRelease: Boolean(options.includePastRelease), includeRelease: !releaseDialog, includePreorder: !releaseDialog }).join("");
   playDates.hidden = !playDates.innerHTML;
@@ -6465,7 +6491,7 @@ function cardFor(game, options = {}) {
     card.querySelector(".edit-action")?.remove();
     card.querySelector(".card-actions")?.remove();
     prices.remove();
-  } else if (game.section === "new") {
+  } else if (displaySection === "new") {
     card.querySelector(".edit-action").remove();
     prices.remove();
     priceRefreshAction.remove();
@@ -6475,7 +6501,7 @@ function cardFor(game, options = {}) {
     boughtAction.addEventListener("click", () => finishSetupGame(game.id));
     completeAction.innerHTML = `<span class="action-label">Play</span>`;
     completeAction.addEventListener("click", () => startPlaying(game.id));
-  } else if (game.section === "backlog" || game.completedAt) {
+  } else if (displaySection === "backlog" || game.completedAt) {
     prices.remove();
     priceRefreshAction.remove();
     boughtAction.remove();
@@ -6685,12 +6711,13 @@ function openDetail(id, options = {}) {
   const owners = ownerTags(game);
   el.detailTitle.textContent = game.title;
   el.detailTitle.className = `${el.detailTitle.className.replace(/\bowner-[\w-]+/g, "").trim()} ${ownerTitleClasses(owners)}`.trim();
-  el.detailStudio.textContent = studioText(game);
-  el.detailStudio.hidden = !el.detailStudio.textContent;
+  el.detailStudio.innerHTML = `${visibleOwnerTags(game).map(ownerBadge).join("")}${studioText(game) ? `<span>${escapeHtml(studioText(game))}</span>` : ""}`;
+  el.detailStudio.hidden = !el.detailStudio.innerHTML;
   el.detailMeta.innerHTML = metaFor(game, { includePsn: false, includeOwners: false }).join("");
+  bindDetailShelfSearch(game);
   el.detailDates.innerHTML = playDatesFor(game, { includePastRelease: true }).join("");
   el.detailDates.hidden = !el.detailDates.innerHTML;
-  el.detailChips.innerHTML = `${visibleOwnerTags(game).map(ownerBadge).join("")}${chipsFor(game).join("")}`;
+  el.detailChips.innerHTML = chipsFor(game).join("");
   el.detailStoreLinks.innerHTML = storeLinksFor(game);
   el.detailDescription.textContent = game.description || "No description yet.";
   renderDetailGuides(game);
@@ -6710,6 +6737,30 @@ function openDetail(id, options = {}) {
   renderDetailTrophies(game);
   el.detailDialog.showModal();
   syncScrollLock();
+}
+
+function bindDetailShelfSearch(game) {
+  el.detailMeta.onclick = null;
+  el.detailMeta.onkeydown = null;
+  if (pageSwitchHidden()) return;
+  const targets = el.detailMeta.querySelectorAll(".platform-badge, .physical-pill");
+  targets.forEach((target) => {
+    target.classList.add("detail-shelf-search-link");
+    target.setAttribute("role", "link");
+    target.tabIndex = 0;
+    target.title = `Find ${game.title} on the shelf`;
+  });
+  const navigate = (event) => {
+    const target = event.target.closest(".detail-shelf-search-link");
+    if (!target) return;
+    if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    const url = new URL("shelf", window.location.href);
+    url.searchParams.set("search", game.title);
+    window.location.href = url.href;
+  };
+  el.detailMeta.onclick = navigate;
+  el.detailMeta.onkeydown = navigate;
 }
 
 async function renderDetailTrophies(game) {
@@ -7060,15 +7111,20 @@ function sectionRank(section) {
 function metaFor(game, options = {}) {
   const values = [];
   if (game.platform) values.push(platformBadge(game.platform, null, { title: game.title }));
-  if (game.dlc) values.push(dlcBadge(game));
   values.push(mediaFormatBadge(game));
+  if (game.dlc) values.push(dlcBadge(game));
   if (game.emulator) values.push(`<span class="emulator-pill">Emulator</span>`);
+  if (game.coop) values.push(coopBadge());
   if (game.lengthHours) values.push(timeBadge(game.lengthHours, hltbUrlFor(game)));
-  if (game.stream) values.push(`<span class="stream-pill">Stream</span>`);
+  if (game.stream) values.push(streamBadge());
   gameStatuses(game).forEach((status) => values.push(statusBadge(status)));
+  if (options.includeCalendarState) {
+    if (game.platinum) values.push(calendarStateBadge("Completed", "completed", trophyIcon()));
+    else if (game.completedAt) values.push(calendarStateBadge("Finished", "finished"));
+    else if (game.section === "backlog") values.push(calendarStateBadge("Backlog", "backlog"));
+  }
   const progress = achievementProgressForGame(game);
   if (options.includePsn !== false && progress) values.push(psnProgressBadge(progress));
-  if (game.coop) values.push(`<span class="coop-pill">Coop</span>`);
   if (game.replayCount) values.push(replayBadge(game.replayCount));
   return values;
 }
@@ -7673,11 +7729,11 @@ function completedBadges(game, options = {}) {
   const progress = achievementProgressForGame(game);
   return [
     game.platform ? platformBadge(game.platform, null, { title: game.title }) : "",
-    game.dlc ? dlcBadge(game) : "",
     mediaFormatBadge(game),
+    game.dlc ? dlcBadge(game) : "",
     game.emulator ? `<span class="emulator-pill">Emulator</span>` : "",
-    game.coop ? `<span class="coop-pill">Coop</span>` : "",
-    game.stream ? `<span class="stream-pill">Stream</span>` : "",
+    game.coop ? coopBadge() : "",
+    game.stream ? streamBadge() : "",
     game.replayCount ? replayBadge(game.replayCount) : "",
     options.includePsn === false ? "" : (progress ? psnProgressBadge(progress) : ""),
   ].filter(Boolean).join("");
@@ -7772,7 +7828,31 @@ function ownerBadge(owner) {
 }
 
 function statusBadge(status) {
-  return `<span class="status-pill ${escapeHtml(statusType(status))}">${escapeHtml(status)}</span>`;
+  return `<span class="status-pill ${escapeHtml(statusType(status))}">${alertTagIcon()}${escapeHtml(status)}</span>`;
+}
+
+function calendarStateBadge(label, tone, icon = "") {
+  return `<span class="calendar-state-pill calendar-state-${escapeHtml(tone)}">${icon}${escapeHtml(label)}</span>`;
+}
+
+function coopBadge() {
+  return `<span class="coop-pill">${coopIcon()}<span>CoOp</span></span>`;
+}
+
+function streamBadge() {
+  return `<span class="stream-pill">${streamPlayIcon()}<span>Stream</span></span>`;
+}
+
+function streamPlayIcon() {
+  return `<svg class="stream-play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5L8 5.5Z"></path></svg>`;
+}
+
+function coopIcon() {
+  return `<svg class="coop-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3"></circle><circle cx="16" cy="8" r="3"></circle><path d="M2.8 19c.4-4 2.1-6 5.2-6s4.8 2 5.2 6"></path><path d="M10.8 19c.4-4 2.1-6 5.2-6s4.8 2 5.2 6"></path></svg>`;
+}
+
+function alertTagIcon() {
+  return `<svg class="alert-tag-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5v11"></path><path d="M12 19h.01"></path></svg>`;
 }
 
 function replayBadge(count) {
@@ -7801,9 +7881,9 @@ function completionPill(game) {
 }
 
 function mediaFormatBadge(game) {
-  if (!game || game.dlc) return "";
+  if (!game) return "";
   const cls = platformClass(game.platform, { title: game.title });
-  if (game.digital) {
+  if (game.digital || game.dlc) {
     return `<span class="digital-pill media-format-pill ${escapeHtml(cls)}" title="Digital" aria-label="Digital">${downloadBadgeIcon()}</span>`;
   }
   return `<span class="digital-pill physical-pill media-format-pill ${escapeHtml(cls)}" title="Physical" aria-label="Physical">${physicalDiskIcon(cls)}</span>`;
@@ -8971,6 +9051,7 @@ async function saveCurrentFormGame() {
   const game = {
     ...(existing || blankGame()),
     id,
+    preorderNewAddition: finishingSetup ? false : Boolean(existing?.preorderNewAddition),
     title: el.fields.title.value.trim(),
     platform: canonicalPlatform(el.fields.platform.value),
     dlc: el.fields.dlc.checked,
@@ -9082,6 +9163,7 @@ function startPlaying(id) {
   if (!game || game.completedAt) return;
   if (isShelfNewAddition(game)) game.acceptedFromShelfAt = new Date().toISOString();
   game.section = "backlog";
+  game.preorderNewAddition = false;
   game.playing = true;
   game.startedAt = game.startedAt || todayDate();
   markGameEdited(game);

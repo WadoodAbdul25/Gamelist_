@@ -1168,6 +1168,27 @@ html.theme-font-mata .shelf-page .playing-section .column-head h2 {
   white-space: nowrap;
 }
 
+.preorder-tab-icon,
+.lookup-label-digital,
+.shelf-dlc-field {
+  display: none;
+}
+
+.lookup-digital-separator,
+.lookup-digital-check {
+  display: inline-flex;
+}
+
+.preorder-tab-icon .shopping-bag-icon {
+  width: 22px;
+  height: 22px;
+  fill: none !important;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .shelf-tabs button[data-shelf-tab="preorders"],
 .shelf-tabs button[data-shelf-tab="new"] {
   gap: 10px;
@@ -1340,6 +1361,51 @@ html.theme-font-mata .shelf-page .playing-section .column-head h2 {
   grid-column: span 3;
 }
 
+.shelf-editor-grid > .shelf-dlc-field {
+  grid-column: span 3;
+  align-self: end;
+  min-height: 44px;
+}
+
+.digital-game-editor .lookup-label-physical,
+.digital-game-editor .shelf-region-field,
+.digital-game-editor .shelf-value-field,
+.digital-game-editor .shelf-condition-field,
+.digital-game-editor .shelf-condition-notes-field,
+.digital-game-editor .shelf-pricecharting-section {
+  display: none;
+}
+
+.digital-game-editor .lookup-label-digital,
+.digital-game-editor .shelf-dlc-field {
+  display: inline-flex;
+}
+
+.digital-game-editor .lookup-row > label:first-child {
+  min-width: 0;
+}
+
+.lookup-digital-separator {
+  align-self: flex-end;
+  width: 0;
+  height: 44px;
+  flex: 0 0 0;
+  margin: 0 12px;
+  border-left: 1px solid var(--line);
+}
+
+.lookup-row .lookup-digital-check {
+  align-items: center;
+  justify-content: flex-start;
+  width: auto;
+  min-width: max-content;
+  height: 44px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  margin: 0;
+}
+
+
 .shelf-editor-grid > .shelf-release-field,
 .shelf-editor-grid > .shelf-value-field {
   grid-column: span 6;
@@ -1348,6 +1414,13 @@ html.theme-font-mata .shelf-page .playing-section .column-head h2 {
 .shelf-editor-grid > .shelf-owner-field,
 .shelf-editor-grid > .shelf-achievement-search-field {
   grid-column: span 6;
+}
+
+@media (min-width: 761px) {
+  .digital-game-editor .shelf-release-field,
+  .digital-game-editor .shelf-owner-field {
+    grid-column: 1 / span 6;
+  }
 }
 
 .shelf-editor-grid > .shelf-condition-notes-field {
@@ -1923,6 +1996,19 @@ textarea {
     height: 20px;
     padding: 0 4px;
     font-size: 10px;
+  }
+
+  .shelf-tabs.four-tabs button[data-shelf-tab="preorders"] .preorder-tab-text {
+    display: none;
+  }
+
+  .shelf-tabs.four-tabs button[data-shelf-tab="preorders"] .preorder-tab-icon {
+    display: inline-flex;
+    color: var(--muted);
+  }
+
+  .shelf-tabs.four-tabs button.active[data-shelf-tab="preorders"] .preorder-tab-icon {
+    color: #fff;
   }
   .shelf-grid {
     grid-template-columns: 1fr;

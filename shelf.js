@@ -85,6 +85,9 @@ const state = {
   releaseCalendarOffset: 0,
   playingTrailerFrame: 0,
   playingHeightFrame: 0,
+  renderSettleFrame: 0,
+  renderSettleTimer: 0,
+  renderSettleObserver: null,
   priceFetchStatus: "",
   shelfSwipeStart: null,
   favoriteGameIds: [],
@@ -213,6 +216,7 @@ async function init() {
   bindTextureParallax();
   populateEditorOptions();
   bindEvents();
+  initRenderSettling();
   hydrateModuleCache();
   const [shelfData, auth, gamelistData] = await Promise.all([
     fetch("/api/shelf", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).catch(() => null),
@@ -380,6 +384,48 @@ function renderAll() {
   renderGamelistModules();
   renderLibrary();
   saveModuleCache();
+  scheduleRenderSettle("render");
+}
+
+function scheduleRenderSettle(reason = "") {
+  cancelAnimationFrame(state.renderSettleFrame);
+  window.clearTimeout(state.renderSettleTimer);
+  state.renderSettleFrame = requestAnimationFrame(() => {
+    state.renderSettleFrame = requestAnimationFrame(() => {
+      state.renderSettleFrame = 0;
+      refreshDynamicLayout(reason);
+    });
+  });
+  state.renderSettleTimer = window.setTimeout(() => refreshDynamicLayout(`${reason}:late`), 360);
+}
+
+function refreshDynamicLayout() {
+  updatePlayingControls();
+  updateFinishedControls();
+  updateShelfRowTitleOverflow();
+  syncShelfTabIndicator();
+  schedulePlayingCardHeightSync();
+}
+
+function settleAfterImages(root = document) {
+  root.querySelectorAll?.("img").forEach((image) => {
+    if (image.dataset.renderSettleBound === "true") return;
+    image.dataset.renderSettleBound = "true";
+    image.addEventListener("load", () => scheduleRenderSettle("image"), { passive: true });
+    image.addEventListener("error", () => scheduleRenderSettle("image-error"), { passive: true });
+    if (image.complete) return;
+    image.decode?.().catch(() => {}).then(() => scheduleRenderSettle("image-decode"));
+  });
+}
+
+function initRenderSettling() {
+  document.fonts?.ready.then(() => scheduleRenderSettle("fonts"));
+  window.addEventListener("load", () => scheduleRenderSettle("load"), { once: true });
+  window.addEventListener("resize", () => scheduleRenderSettle("resize"), { passive: true });
+  window.addEventListener("orientationchange", () => window.setTimeout(() => scheduleRenderSettle("orientation"), 120), { passive: true });
+  if (!("ResizeObserver" in window)) return;
+  state.renderSettleObserver = new ResizeObserver(() => scheduleRenderSettle("resize-observer"));
+  [el.shelf, el.tabs, el.releaseCalendar, el.releaseDialogList].filter(Boolean).forEach((node) => state.renderSettleObserver.observe(node));
 }
 
 function hydrateModuleCache() {
@@ -473,6 +519,7 @@ function openReleaseDialog(date, games = []) {
   el.releaseDialogTitle.innerHTML = `${calendarMiniIcon()}<span>${escapeHtml(formatLongDate(date))}</span>`;
   el.releaseDialogList.innerHTML = games.map((game) => gamelistProjectionCard(game, { releaseDialog: true })).join("");
   el.releaseDialogList.querySelectorAll(".cover-button img").forEach(bindCoverFrame);
+  settleAfterImages(el.releaseDialogList);
   el.releaseDialogList.querySelectorAll(".game-card[data-gamelist-id]").forEach((card) => {
     const open = () => {
       closeDialog(el.releaseDialog);
@@ -488,6 +535,7 @@ function openReleaseDialog(date, games = []) {
     });
   });
   openDialog(el.releaseDialog);
+  scheduleRenderSettle("release-dialog");
 }
 
 function renderChrome() {
@@ -1082,6 +1130,8 @@ function renderLibrary() {
     el.shelf.appendChild(fragment);
   }
   el.empty.hidden = games.length > 0;
+  settleAfterImages(el.shelf);
+  scheduleRenderSettle("library");
 }
 
 function syncShelfTabIndicator() {
@@ -1263,12 +1313,13 @@ function gameRow(game) {
   const tags = visibleShelfTags(game, preorderProjection ? (game.genres || []).slice(0, 4) : [...(game.tags || []), game.category && game.category !== "Game" ? game.category : "", ...String(game.genre || "").split(",")]);
   const description = game.description || "";
   const actions = preorderProjection ? `<div class="game-row-actions-top"><button class="icon-button row-edit-action" data-action="edit-preorder" type="button" title="Edit" aria-label="Edit">${pencilIcon()}</button><button class="icon-button danger-button row-delete-action" data-action="delete-preorder" type="button" title="Delete" aria-label="Delete">${trashIcon()}</button></div><div class="game-row-actions-bottom"><button class="ghost-button" data-action="accept-preorder" type="button">Got it</button></div>` : isPendingCollectionGame(game) ? `<div class="game-row-actions-top"><button class="primary-button add-collection-action" data-action="add-collection" type="button">Add to Collection</button></div><div class="game-row-actions-bottom"><button class="icon-button danger-button row-delete-action" data-action="delete" type="button" title="Delete" aria-label="Delete">${trashIcon()}</button></div>` : `<div class="game-row-actions-top"><button class="icon-button row-edit-action" data-action="edit" type="button" title="Edit" aria-label="Edit">${pencilIcon()}</button><button class="icon-button danger-button row-delete-action" data-action="delete" type="button" title="Delete" aria-label="Delete">${trashIcon()}</button></div><div class="game-row-actions-bottom"><button class="ghost-button shelf-add-backlog-action" data-action="add-backlog" type="button">Add to Backlog</button></div>`;
+  const mobilePreorderTag = game.preorderStore ? mobilePreorderProjectionChip(game.preorderStore) : "";
   const core = preorderProjection
-    ? `${platformBadge(game.platform, { title: game.title })}${mediaFormatBadge(game)}${dlcBadge(game)}${entitlementBadge(game)}${preorderPlaytimePill(game)}${game.releaseDate ? `<span class="release-pill history-date-pill"><small class="release-date-label"><span>Releases</span>${calendarMiniIcon()}</small><strong>${escapeHtml(formatDate(game.releaseDate))}</strong></span>` : ""}`
-    : digitalGame ? `${platformBadge(game.platform, { title: game.title })}${mediaFormatBadge(game)}${dlcBadge(game)}${entitlementBadge(game)}${shelfProgressPill(game)}`
-    : `<span class="region-flag" title="${escapeHtml(game.country)}">${flagIcon(game.country)}</span>${platformBadge(game.platform, { title: game.title })}${conditionBadge(conditionLabel(game))}${shelfProgressPill(game)}`;
+    ? `${platformBadge(game.platform, { title: game.title })}${mediaFormatBadge(game)}${dlcBadge(game)}${entitlementBadge(game)}${preorderPlaytimePill(game)}${game.releaseDate ? `<span class="release-pill history-date-pill"><small class="release-date-label"><span>Releases</span>${calendarMiniIcon()}</small><strong>${escapeHtml(formatDate(game.releaseDate))}</strong></span>` : ""}${mobilePreorderTag}`
+    : digitalGame ? `${platformBadge(game.platform, { title: game.title })}${mediaFormatBadge(game)}${dlcBadge(game)}${entitlementBadge(game)}${shelfProgressPill(game)}${mobilePreorderTag}`
+    : `<span class="region-flag" title="${escapeHtml(game.country)}">${flagIcon(game.country)}</span>${platformBadge(game.platform, { title: game.title })}${conditionBadge(conditionLabel(game))}${shelfProgressPill(game)}${mobilePreorderTag}`;
   const prices = preorderProjection ? gamelistPreorderPrices(game) : "";
-  return `<article class="game-row${preorderProjection ? " preorder-projection-row" : ""}${ownerClasses}" data-id="${escapeHtml(game.id)}" role="button" tabindex="0" aria-label="${escapeHtml(`Open ${game.title}`)}"><span class="game-row-cover-wrap"><img class="game-row-cover" src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async"><img class="game-row-cover-preview" src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async" aria-hidden="true"></span><div class="game-row-identity"><strong class="${visibleOwners.map(ownerColorClass).join(" ")}">${escapeHtml(game.title)}</strong>${visibleOwners.length || studio ? `<span class="game-row-studio-line">${visibleOwners.map(ownerBadge).join("")}${studio ? `<span>${escapeHtml(studio)}</span>` : ""}</span>` : ""}</div><div class="game-row-core">${core}</div><div class="game-row-tags">${preorderProjection && game.preorderStore ? preorderProjectionChip(game.preorderStore) : ""}${tags.map((tag) => `<span class="chip genre">${escapeHtml(tag)}</span>`).join("")}</div>${prices ? `<div class="game-row-prices">${prices}</div>` : ""}${description ? `<div class="game-row-description${preorderProjection ? "" : " shelf-row-description"}">${escapeHtml(description)}</div>` : ""}<div class="game-row-actions">${actions}</div></article>`;
+  return `<article class="game-row${preorderProjection ? " preorder-projection-row" : ""}${ownerClasses}" data-id="${escapeHtml(game.id)}" role="button" tabindex="0" aria-label="${escapeHtml(`Open ${game.title}`)}"><span class="game-row-cover-wrap"><img class="game-row-cover" src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async"><img class="game-row-cover-preview" src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async" aria-hidden="true"></span><div class="game-row-identity"><strong class="${visibleOwners.map(ownerColorClass).join(" ")}">${escapeHtml(game.title)}</strong>${visibleOwners.length || studio ? `<span class="game-row-studio-line">${visibleOwners.map(ownerBadge).join("")}${studio ? `<span>${escapeHtml(studio)}</span>` : ""}</span>` : ""}</div><div class="game-row-core">${core}</div><div class="game-row-tags">${game.preorderStore ? preorderProjectionChip(game.preorderStore) : ""}${tags.map((tag) => `<span class="chip genre">${escapeHtml(tag)}</span>`).join("")}</div>${prices ? `<div class="game-row-prices">${prices}</div>` : ""}${description ? `<div class="game-row-description${preorderProjection ? "" : " shelf-row-description"}">${escapeHtml(description)}</div>` : ""}<div class="game-row-actions">${actions}</div></article>`;
 }
 
 function gamelistPreorderPrices(game) {
@@ -1277,6 +1328,10 @@ function gamelistPreorderPrices(game) {
 
 function preorderProjectionChip(store) {
   return `<span class="chip accent preorder-chip" title="${escapeHtml(`Preordered: ${store}`)}">${shoppingBagIcon()}${escapeHtml(store)}</span>`;
+}
+
+function mobilePreorderProjectionChip(store) {
+  return `<span class="mobile-preorder-tag">${preorderProjectionChip(store)}</span>`;
 }
 
 function preorderPlaytimePill(game) {
@@ -2841,6 +2896,8 @@ function renderGamelistModules() {
   el.finishedCarousel.innerHTML = finished.map(finishedProjectionCard).join("");
   el.playingCarousel.querySelectorAll(".game-card.has-art").forEach(bindActivityCardParallax);
   el.playingCarousel.querySelectorAll(".cover-button img").forEach((image) => { bindCoverFrame(image); image.addEventListener("load", schedulePlayingCardHeightSync, { once: true }); });
+  settleAfterImages(el.playingCarousel);
+  settleAfterImages(el.finishedCarousel);
   preloadPausedActivityTrailers(el.playingCarousel, escapeHtml);
   el.playingCarousel.querySelectorAll(".trailer-toggle").forEach((button) => button.addEventListener("click", (event) => { event.stopPropagation(); const card = button.closest(".game-card"); const paused = card.classList.toggle("trailer-user-paused"); button.innerHTML = paused ? playTrailerIcon() : pauseTrailerIcon(); button.title = paused ? "Play trailer" : "Pause trailer"; button.setAttribute("aria-label", button.title); scheduleShelfTrailerUpdate(); }));
   el.playingCarousel.querySelectorAll(".edit-action").forEach((button) => button.addEventListener("click", (event) => { event.stopPropagation(); const game = state.gamelistGames.find((item) => item.id === button.closest("[data-gamelist-id]")?.dataset.gamelistId); if (!state.canEdit) openAuth(); else if (game) openGamelistDetails(game); }));
@@ -2848,6 +2905,7 @@ function renderGamelistModules() {
   syncShelfActivityVisibility();
   el.playingCount.textContent = playingCountText(playing.length);
   schedulePlayingCardHeightSync();
+  scheduleRenderSettle("gamelist-modules");
   requestAnimationFrame(() => { updatePlayingControls(); updateFinishedControls(); scheduleShelfTrailerUpdate(); });
 }
 function projectedDetailGame(game) { return { ...game, _gamelistProjection: true }; }
@@ -2934,8 +2992,13 @@ function gamelistProjectionCard(game, options = {}) {
   card.querySelector(".edit-action").classList.remove("editor-only");
   const studioLine = card.querySelector(".studio-line"); studioLine.textContent = studio; studioLine.hidden = !studio;
   card.querySelector(".meta").innerHTML = projectionMeta(game, { includePast: isReleaseDialog, includeProgress: neutralReleaseCard, includeRelease: !isReleaseDialog });
-  const dates = card.querySelector(".play-dates"); dates.innerHTML = game.startedAt && !neutralReleaseCard ? `<span class="history-pill history-date-pill"><small>Started</small><strong>${escapeHtml(formatShortDate(game.startedAt))}</strong></span>` : ""; dates.hidden = !dates.innerHTML;
-  card.querySelector(".chips").innerHTML = projectionChips(game);
+  const dates = card.querySelector(".play-dates");
+  dates.innerHTML = [
+    game.startedAt && !neutralReleaseCard ? `<span class="history-pill history-date-pill"><small>Started</small><strong>${escapeHtml(formatShortDate(game.startedAt))}</strong></span>` : "",
+    isReleaseDialog && game.preorderStore ? preorderProjectionChip(game.preorderStore) : "",
+  ].join("");
+  dates.hidden = !dates.innerHTML;
+  card.querySelector(".chips").innerHTML = projectionChips(game, { includePreorder: !isReleaseDialog });
   const trophies = card.querySelector(".card-trophies"); trophies.innerHTML = isReleaseDialog ? "" : shelfCardTrophies(game, { compactProgress: true }); trophies.hidden = !trophies.innerHTML;
   card.querySelector(".card-actions").remove();
   const prices = card.querySelector(".prices");
@@ -3001,9 +3064,9 @@ function downloadBadgeIcon() {
     </svg>
   `;
 }
-function projectionChips(game) {
+function projectionChips(game, options = {}) {
   return [
-    game.preorderStore ? chip(`Preordered: ${game.preorderStore}`, "accent") : "",
+    options.includePreorder === false || !game.preorderStore ? "" : chip(`Preordered: ${game.preorderStore}`, "accent"),
     ...(game.genres || []).slice(0, 4).map((tag) => chip(tag, "genre")),
   ].join("");
 }

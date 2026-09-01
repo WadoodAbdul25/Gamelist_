@@ -7462,7 +7462,7 @@ async function renderDetailTrophies(game) {
 async function renderDetailSteamAchievements(game) {
   const appId = steamAppIdFor(game);
   const steamUser = state.settings.steamUser || "";
-  if (!game?.playing || !appId || (state.steamOwnedAppIds && !state.steamOwnedAppIds.has(appId))) {
+  if (!appId || (state.steamOwnedAppIds && !state.steamOwnedAppIds.has(appId))) {
     state.detailTrophyRequest = "";
     state.detailTrophiesData = [];
     state.detailTrophyProvider = "steam";
@@ -10406,14 +10406,16 @@ function renderLookupResults(results) {
     const row = document.createElement("div");
     row.className = "lookup-result";
     const igdbRating = igdbRatingBadge(result);
+    const publisherDate = lookupPublisherDateLine(result);
+    const tags = lookupTagsLine(result);
+    const description = previewDescription(result.description || "");
     row.innerHTML = `
       <img src="${escapeHtml(result.cover ? coverDisplayUrl(result.cover) : "")}" alt="" loading="lazy" decoding="async" ${result.cover ? "" : "hidden"}>
       <div>
-        <strong>${escapeHtml(result.title)}</strong>
-        ${igdbRating}
-        <p>${escapeHtml([result.releaseDate || result.releaseText, result.lengthHours ? `${result.lengthHours} hrs` : ""].filter(Boolean).join(" · "))}</p>
-        <p>${escapeHtml([...(result.genres || []), result.developer, result.publisher].filter(Boolean).join(" · "))}</p>
-        <p>${escapeHtml(previewDescription(result.description || ""))}</p>
+        <span class="lookup-result-title"><strong>${escapeHtml(result.title)}</strong>${igdbRating}</span>
+        ${publisherDate ? `<p>${escapeHtml(publisherDate)}</p>` : ""}
+        ${tags ? `<p>${escapeHtml(tags)}</p>` : ""}
+        ${description ? `<p>${escapeHtml(description)}</p>` : ""}
       </div>
       <button class="ghost-button" type="button">${escapeHtml(tt("Use"))}</button>
     `;
@@ -10421,6 +10423,19 @@ function renderLookupResults(results) {
     el.lookupResults.appendChild(row);
   });
   requestAnimationFrame(() => el.lookupResults.classList.add("loaded"));
+}
+
+function lookupPublisherDateLine(result) {
+  return [
+    [result.developer, result.publisher].filter(Boolean).join(" / "),
+    result.releaseDate || result.releaseText,
+  ].filter(Boolean).join(" • ");
+}
+
+function lookupTagsLine(result) {
+  return unique([...(result.genres || []), ...(result.tags || [])])
+    .filter(Boolean)
+    .join(", ");
 }
 
 function igdbRatingBadge(result) {

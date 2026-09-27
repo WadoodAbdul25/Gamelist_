@@ -249,7 +249,7 @@ const state = {
   platinumViewMode: localStorage.getItem(PLATINUM_VIEW_MODE_KEY) === "list" ? "list" : "grid",
   releaseCalendarOffset: 0,
   finishedStatsStreamMode: "all",
-  finishedStatsTopMode: "time",
+  topGamesCarouselMode: "time",
   detailTrophyRequest: "",
   detailReturnToHistory: false,
   detailGameId: "",
@@ -860,7 +860,7 @@ function bindEvents() {
   });
   el.finishedStatsDialog?.addEventListener("close", () => {
     el.finishedStatsDialog.classList.remove("has-mini-overlay");
-    el.finishedStatsDialog.querySelector(".finished-stats-hover-float")?.remove();
+    document.querySelector(".finished-stats-hover-float")?.remove();
     el.finishedStatsBody?.querySelector(".finished-stats-floating-source")?.classList.remove("finished-stats-floating-source");
     syncScrollLock();
   });
@@ -959,7 +959,7 @@ function bindEvents() {
   el.gotyStatsButton?.addEventListener("click", () => openFinishedStatsDialog(state.gotyYear || currentGameOfTheYear()));
   el.gotyResetButton?.addEventListener("click", resetGameOfTheYearFromForm);
   el.gotyPickerOrder?.addEventListener("change", () => {
-    state.gotyPickerOrder = el.gotyPickerOrder.value || gotyOrderForDefault(state.settings.defaultOrder);
+    state.gotyPickerOrder = normalizeGameOfTheYearPickerOrder(el.gotyPickerOrder.value || gotyOrderForDefault(state.settings.defaultOrder));
     const year = el.gotyForm.dataset.gotyYear || currentGameOfTheYear();
     renderGameOfTheYearPicker(sortedGameOfTheYearChoices(gameOfTheYearCandidateGames(year)), currentGameOfTheYearDraftPicks());
   });
@@ -973,7 +973,11 @@ function bindEvents() {
   el.gotyStatsPreviewDialog?.addEventListener("click", (event) => {
     if (event.target === el.gotyStatsPreviewDialog) el.gotyStatsPreviewDialog.close();
   });
-  el.gotyStatsPreviewDialog?.addEventListener("close", syncScrollLock);
+  el.gotyStatsPreviewDialog?.addEventListener("close", () => {
+    document.querySelector(".finished-stats-hover-float")?.remove();
+    el.gotyStatsPreviewBody?.querySelector(".finished-stats-floating-source")?.classList.remove("finished-stats-floating-source");
+    syncScrollLock();
+  });
   el.gotyStatsPreviewContinueButton?.addEventListener("click", () => {
     const year = el.gotyStatsPreviewDialog?.dataset.gotyYear || currentGameOfTheYear();
     el.gotyStatsPreviewDialog?.close();
@@ -1549,13 +1553,18 @@ function gameOfTheYearComplete(picks = {}) {
   return gameOfTheYearCategoriesComplete(picks, GAME_OF_YEAR_CATEGORIES);
 }
 
+function gameOfTheYearCategoryOptional(key) {
+  return key === "disappointment";
+}
+
 function gameOfTheYearCategoriesComplete(picks = {}, categories = GAME_OF_YEAR_CATEGORIES) {
-  return categories.every(([key]) => Boolean(picks[key]));
+  return categories.every(([key]) => gameOfTheYearCategoryOptional(key) || Boolean(picks[key]));
 }
 
 function gameOfTheYearCategoriesValid(picks = {}, categories = GAME_OF_YEAR_CATEGORIES, games = []) {
   const gameMap = new Map((Array.isArray(games) ? games : []).map((game) => [game.id, game]));
   return categories.every(([key]) => {
+    if (gameOfTheYearCategoryOptional(key) && !picks[key]) return true;
     const game = gameMap.get(picks[key]);
     return Boolean(game) && gameOfTheYearGameAllowedForCategory(game, key);
   });
@@ -2649,7 +2658,9 @@ function renderGameOfTheYear() {
   const entry = state.settings.gameOfTheYear?.[year] || {};
   const picks = entry.picks || {};
   const candidates = gameOfTheYearCandidateGames(year);
-  const categories = gameOfTheYearCategoriesForYear(year, candidates);
+  const statsGames = gameOfTheYearFinishedStatsGames(year);
+  const activeCategories = gameOfTheYearCategoriesForYear(year, candidates);
+  const categories = GAME_OF_YEAR_CATEGORIES;
   const candidateIds = new Set(candidates.map((game) => game.id));
   el.gotySection.hidden = false;
   const sectionTitle = window.matchMedia("(max-width: 520px)").matches ? tt("My GOTYs {year}", { year }) : tt("My Games of the year {year}", { year });
@@ -2658,8 +2669,8 @@ function renderGameOfTheYear() {
   el.gotyYearSelect.value = year;
   syncStyledSelect(el.gotyYearSelect, { activeValue: null });
   if (el.gotyYearCount) {
-    const count = candidates.length;
-    const playtime = formatPlaytimeTotal(totalPlaytimeHours(candidates)).toLowerCase();
+    const count = statsGames.length;
+    const playtime = formatPlaytimeTotal(totalPlaytimeHours(statsGames)).toLowerCase();
     el.gotyYearCount.textContent = [
       tt("{count} games played", { count }),
       playtime ? tt("{playtime} total year playtime", { playtime }) : "",
@@ -2670,7 +2681,7 @@ function renderGameOfTheYear() {
   el.gotyEditButton.innerHTML = pencilIcon();
   el.gotyEditButton.title = tt("Edit");
   el.gotyEditButton.setAttribute("aria-label", tt("Edit"));
-  el.gotySaveButton.hidden = !gameOfTheYearCategoriesValid(picks, categories, candidates);
+  el.gotySaveButton.hidden = !gameOfTheYearCategoriesValid(picks, activeCategories, candidates);
   el.gotySaveButton.innerHTML = downloadIcon();
   el.gotySaveButton.title = tt("Download");
   el.gotySaveButton.setAttribute("aria-label", tt("Download"));
@@ -2680,12 +2691,22 @@ function renderGameOfTheYear() {
     el.gotyStatsButton.title = tt("Stats");
     el.gotyStatsButton.setAttribute("aria-label", tt("Stats for {year}", { year }));
   }
-  el.gotyGrid.innerHTML = categories.map(([key, label], index) => {
+  const gotyCards = categories.map(([key, label]) => {
     const labelText = tt(label);
     const game = gameById(picks[key]);
-    if (!game || !candidateIds.has(game.id) || !gameOfTheYearGameAllowedForCategory(game, key)) return "";
+    const isFilled = Boolean(game && candidateIds.has(game.id) && gameOfTheYearGameAllowedForCategory(game, key));
+    return { key, labelText, game, isFilled };
+  }).sort((a, b) => Number(b.isFilled) - Number(a.isFilled));
+  el.gotyGrid.innerHTML = gotyCards.map(({ labelText, game, isFilled }, index) => {
+    const edgeClass = index >= gotyCards.length - 2 ? "goty-card-edge-right" : index === 0 ? "goty-card-edge-left" : "";
+    if (!isFilled) {
+      return `
+        <span class="goty-card goty-card-empty ${edgeClass}" aria-label="${escapeHtml(labelText)}">
+          <span class="goty-cover goty-empty-cover" aria-hidden="true"></span>
+        </span>
+      `;
+    }
     const cover = coverDisplayUrl(game.cover || "") || platformLogo(game.platform || "PS5");
-    const edgeClass = index >= categories.length - 2 ? "goty-card-edge-right" : index === 0 ? "goty-card-edge-left" : "";
     return `
       <button class="goty-card ${edgeClass}" type="button" data-id="${escapeHtml(game.id)}" aria-label="${escapeHtml(`${labelText}: ${game.title}`)}">
         <span class="goty-category">${escapeHtml(labelText)}</span>
@@ -2694,7 +2715,7 @@ function renderGameOfTheYear() {
       </button>
     `;
   }).join("");
-  el.gotyGrid.querySelectorAll(".goty-card").forEach((button) => {
+  el.gotyGrid.querySelectorAll(".goty-card[data-id]").forEach((button) => {
     button.addEventListener("click", () => openDetail(button.dataset.id));
   });
 }
@@ -2719,17 +2740,18 @@ function openGameOfTheYearDialog(year = currentGameOfTheYear(), options = {}) {
   state.gotyYear = String(year);
   el.gotyForm.dataset.gotyYear = String(year);
   const entry = state.settings.gameOfTheYear?.[year] || {};
-  const picks = options.autoPick ? gameOfTheYearAutoPicks(year, games, entry.picks || {}) : { ...(entry.picks || {}) };
+  const shouldAutofillPicks = options.autoPick && gameOfTheYearAutofillUsesRatings(games);
+  const picks = shouldAutofillPicks ? gameOfTheYearAutoPicks(year, games, entry.picks || {}) : { ...(entry.picks || {}) };
   const dialogTitle = window.matchMedia("(max-width: 520px)").matches ? tt("GOTYs {year}", { year }) : tt("Games of the year {year}", { year });
   el.gotyDialogTitle.innerHTML = `${trophyIcon()} <span>${escapeHtml(dialogTitle)}</span>`;
   const copy = el.gotyForm.querySelector(".goty-dialog-copy");
   if (copy) {
-    copy.textContent = options.autoPick && gameOfTheYearAutofillUsesRatings(games)
+    copy.textContent = shouldAutofillPicks
       ? tt("We guessed your picks. Review each category and change anything you want.")
       : tt("Choose one finished game for every category.");
   }
   if (el.gotyPickerOrder) {
-    state.gotyPickerOrder = state.gotyPickerOrder || gotyOrderForDefault(state.settings.defaultOrder);
+    state.gotyPickerOrder = normalizeGameOfTheYearPickerOrder(state.gotyPickerOrder || gotyOrderForDefault(state.settings.defaultOrder));
     el.gotyPickerOrder.value = state.gotyPickerOrder;
     syncStyledSelect(el.gotyPickerOrder, { activeValue: null });
   }
@@ -2752,10 +2774,9 @@ function openGameOfTheYearDialog(year = currentGameOfTheYear(), options = {}) {
 
 async function openGameOfTheYearDialogWithAutofillLoading(year = currentGameOfTheYear(), options = {}) {
   const candidates = gameOfTheYearCandidateGames(year);
-  if (!options.autoPick || !gameOfTheYearAutofillUsesRatings(candidates)) {
-    return openGameOfTheYearDialog(year, options);
+  if (options.autoPick) {
+    await showGameOfTheYearAutofillLoading(candidates);
   }
-  await showGameOfTheYearAutofillLoading(candidates);
   if (!options.skipStatsPreview && shouldShowGameOfTheYearStatsPreview(candidates)) {
     return openGameOfTheYearStatsPreview(year, options);
   }
@@ -2763,7 +2784,7 @@ async function openGameOfTheYearDialogWithAutofillLoading(year = currentGameOfTh
 }
 
 function shouldShowGameOfTheYearStatsPreview(games = []) {
-  return gameOfTheYearPlaytimeGames(games).length >= 5;
+  return Array.isArray(games) && games.some((game) => !game?.dlc);
 }
 
 function gameOfTheYearPlaytimeGames(games = []) {
@@ -2773,16 +2794,17 @@ function gameOfTheYearPlaytimeGames(games = []) {
 }
 
 function openGameOfTheYearStatsPreview(year = currentGameOfTheYear(), options = {}) {
-  const games = gameOfTheYearCandidateGames(year);
+  const games = gameOfTheYearFinishedStatsGames(year);
   const playtimeGames = gameOfTheYearPlaytimeGames(games);
-  if (playtimeGames.length < 5) return openGameOfTheYearDialog(year, options);
   state.gotyYear = String(year);
   el.gotyStatsPreviewDialog.dataset.gotyYear = String(year);
   el.gotyStatsPreviewBrow.textContent = tt("Before your picks");
   el.gotyStatsPreviewTitle.innerHTML = `${trophyIcon()} <span>${escapeHtml(tt("Your {year} games", { year }))}</span>`;
-  el.gotyStatsPreviewBody.innerHTML = gameOfTheYearStatsPreviewMarkup(year, games, playtimeGames);
-  el.gotyStatsPreviewContinueButton.textContent = tt("See your games of the year");
-  bindGameOfTheYearStatsPreviewCarousel();
+  el.gotyStatsPreviewBody.innerHTML = gameOfTheYearStatsPreviewMarkup(year, games, playtimeGames, state.topGamesCarouselMode);
+  const willAutofillPicks = options.autoPick && gameOfTheYearAutofillUsesRatings(sortedGameOfTheYearChoices(gameOfTheYearCandidateGames(year)));
+  el.gotyStatsPreviewContinueButton.textContent = tt(willAutofillPicks ? "See your games of the year" : "Choose your games of the year");
+  bindGameOfTheYearStatsPreviewCarousel(year, options);
+  bindFinishedStatsDesktopOverlays(el.gotyStatsPreviewDialog, el.gotyStatsPreviewBody);
   try {
     if (!el.gotyStatsPreviewDialog.open) el.gotyStatsPreviewDialog.showModal();
   } catch (error) {
@@ -2797,12 +2819,15 @@ function openGameOfTheYearStatsPreview(year = currentGameOfTheYear(), options = 
   return true;
 }
 
-function gameOfTheYearStatsPreviewMarkup(year, games = [], playtimeGames = gameOfTheYearPlaytimeGames(games)) {
+function gameOfTheYearStatsPreviewMarkup(year, games = [], playtimeGames = gameOfTheYearPlaytimeGames(games), mode = "time") {
   const platforms = countBy(games, statsPlatformLabel);
   const tags = countTags(games);
   const totalPlaytime = totalPlaytimeHours(games);
   const completed = finishedStatsCompleted(String(year));
   const coopGames = games.filter((game) => game.coop);
+  const normalizedMode = normalizeTopGamesCarouselMode(mode);
+  const showTopGamesCarousel = playtimeGames.length >= 5;
+  const topGames = showTopGamesCarousel ? finishedStatsTopGames(games, normalizedMode) : [];
   const kpis = [
     statsKpiCard(tt("Games played"), games.length, statsGameList(games), { tone: "finished" }),
     totalPlaytime ? statsKpiCard(tt("Total year playtime"), formatPlaytimeTotal(totalPlaytime), statsPlaytimeGameList(playtimeGames), { tone: "playtime", valueHtml: playtimeKpiValue(totalPlaytime) }) : "",
@@ -2810,18 +2835,14 @@ function gameOfTheYearStatsPreviewMarkup(year, games = [], playtimeGames = gameO
     coopGames.length ? statsKpiCard(tt("CoOp games"), coopGames.length, statsGameList(coopGames), { tone: "coop", icon: coopIcon() }) : "",
   ].filter(Boolean);
   return `
-    <section class="goty-stats-preview-playtime">
-      <div class="goty-stats-preview-section-head">
-        <h3>${escapeHtml(tt("Games by playtime"))}</h3>
-        <div class="goty-stats-preview-navs">
-          <button class="icon-button playing-slider-button goty-stats-preview-nav" type="button" data-goty-preview-scroll="-1" title="${escapeHtml(tt("Previous games"))}" aria-label="${escapeHtml(tt("Previous games"))}">${gotyPickerArrowIcon("left")}</button>
-          <button class="icon-button playing-slider-button goty-stats-preview-nav" type="button" data-goty-preview-scroll="1" title="${escapeHtml(tt("Next games"))}" aria-label="${escapeHtml(tt("Next games"))}">${gotyPickerArrowIcon("right")}</button>
+    ${showTopGamesCarousel ? `
+      <section class="goty-stats-preview-playtime">
+        ${topGamesCarouselHeaderMarkup(normalizedMode, "goty")}
+        <div class="goty-stats-preview-strip">
+          <div class="goty-stats-preview-list">${topGames.map((game) => gameOfTheYearStatsPreviewCard(game, normalizedMode)).join("")}</div>
         </div>
-      </div>
-      <div class="goty-stats-preview-strip">
-        <div class="goty-stats-preview-list">${playtimeGames.map(gameOfTheYearStatsPreviewCard).join("")}</div>
-      </div>
-    </section>
+      </section>
+    ` : ""}
     <section class="finished-stats-kpis ${kpis.length === 3 ? "is-grid-3" : ""}">${kpis.join("")}</section>
     <section class="finished-stats-charts goty-stats-preview-charts">
       ${statsDonutCard(tt("Platform breakdown"), platforms, "platform", platforms.length, games)}
@@ -2834,17 +2855,19 @@ function gameOfTheYearStatsPreviewMarkup(year, games = [], playtimeGames = gameO
   `;
 }
 
-function gameOfTheYearStatsPreviewCard(game) {
+function gameOfTheYearStatsPreviewCard(game, mode = "time") {
   const cover = coverDisplayUrl(game.cover || "") || platformLogo(game.platform || "PS5");
   const hours = statsPlaytimeHours(game);
+  const normalizedMode = normalizeTopGamesCarouselMode(mode);
+  const lowerPill = normalizedMode === "grade" ? ratingScoreBadge(game) : `<span class="goty-stats-preview-time" style="${escapeHtml(timePillStyle(hours))}">${clockIcon()}<span>${escapeHtml(formatPlaytimeTotal(hours))}</span></span>`;
   const playModeBadge = game.coop ? coopBadge() : (game.multiplayer ? multiplayerBadge() : "");
   return `
     <article class="goty-stats-preview-card">
       <span class="goty-choice-cover"><img src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async"></span>
       <span class="goty-choice-title">
         <strong data-full-title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</strong>
-        <span class="goty-stats-preview-badges">${platformBadge(game.platform)}${ratingScoreBadge(game)}</span>
-        <span class="goty-stats-preview-time-row"><span class="goty-stats-preview-time" style="${escapeHtml(timePillStyle(hours))}">${clockIcon()}<span>${escapeHtml(formatPlaytimeTotal(hours))}</span></span>${playModeBadge}</span>
+        <span class="goty-stats-preview-badges">${platformBadge(game.platform)}</span>
+        <span class="goty-stats-preview-time-row">${lowerPill}${playModeBadge}</span>
       </span>
     </article>
   `;
@@ -2870,7 +2893,13 @@ function gameOfTheYearStatsPreviewMonthBars(games = [], year = "") {
   }).join("");
 }
 
-function bindGameOfTheYearStatsPreviewCarousel() {
+function bindGameOfTheYearStatsPreviewCarousel(year = currentGameOfTheYear(), options = {}) {
+  const select = el.gotyStatsPreviewBody.querySelector("[data-top-games-mode]");
+  select?.addEventListener("change", () => {
+    state.topGamesCarouselMode = normalizeTopGamesCarouselMode(select.value);
+    openGameOfTheYearStatsPreview(year, options);
+  });
+  syncStyledSelect(select);
   const list = el.gotyStatsPreviewBody.querySelector(".goty-stats-preview-list");
   const strip = el.gotyStatsPreviewBody.querySelector(".goty-stats-preview-strip");
   const update = () => {
@@ -2904,8 +2933,10 @@ function gameOfTheYearAutofillUsesRatings(games = []) {
 
 function showGameOfTheYearAutofillLoading(games = []) {
   document.querySelector(".goty-loading-overlay")?.remove();
+  document.body.classList.remove("goty-loading-active");
   const overlay = document.createElement("div");
   overlay.className = "goty-loading-overlay";
+  document.body.classList.add("goty-loading-active");
   overlay.setAttribute("role", "status");
   overlay.setAttribute("aria-live", "polite");
   const messages = [
@@ -2953,6 +2984,7 @@ function showGameOfTheYearAutofillLoading(games = []) {
       overlay.classList.remove("visible");
       window.setTimeout(() => {
         overlay.remove();
+        document.body.classList.remove("goty-loading-active");
         resolve();
       }, 240);
     }, 3800);
@@ -3033,12 +3065,17 @@ function renderGameOfTheYearPicker(games, picks) {
 }
 
 function sortedGameOfTheYearChoices(games) {
-  const order = state.gotyPickerOrder || gotyOrderForDefault(state.settings.defaultOrder);
+  const order = normalizeGameOfTheYearPickerOrder(state.gotyPickerOrder || gotyOrderForDefault(state.settings.defaultOrder));
   return [...games].sort((a, b) => {
     if (order === "name") return stringCompare(a.title, b.title) || gameOfTheYearTimeValue(b) - gameOfTheYearTimeValue(a);
     if (order === "platform") return stringCompare(canonicalPlatform(a.platform), canonicalPlatform(b.platform)) || stringCompare(a.title, b.title);
+    if (order === "rating") return (ratingScoreValue(b) || 0) - (ratingScoreValue(a) || 0) || gameOfTheYearTimeValue(b) - gameOfTheYearTimeValue(a) || stringCompare(a.title, b.title);
     return gameOfTheYearTimeValue(b) - gameOfTheYearTimeValue(a) || stringCompare(a.title, b.title);
   });
+}
+
+function normalizeGameOfTheYearPickerOrder(order = "time") {
+  return ["time", "rating", "name", "platform"].includes(order) ? order : "time";
 }
 
 function currentGameOfTheYearDraftPicks() {
@@ -3194,12 +3231,13 @@ function gameOfTheYearHoverInfo(game, className) {
     ...String(game.genres || "").split(","),
     ...(Array.isArray(game.tags) ? game.tags : []),
   ].map((tag) => tag.trim()).filter(Boolean).slice(0, 4);
+  const playModeBadge = game.coop ? coopBadge() : (game.multiplayer ? multiplayerBadge() : "");
   return `
     <span class="${className}">
       <strong>${escapeHtml(game.title)}</strong>
       ${details.length ? `<small>${escapeHtml(details.join(" · "))}</small>` : ""}
       <span class="goty-meta">
-        <span class="goty-main-pills">${platformBadge(game.platform)}${progress ? psnProgressBadge(progress, { className: "goty-progress-pill" }) : ""}</span>
+        <span class="goty-main-pills">${platformBadge(game.platform)}${progress ? psnProgressBadge(progress, { className: "goty-progress-pill" }) : ""}${ratingScoreBadge(game)}${playModeBadge}</span>
         ${tags.map((tag) => `<span class="chip genre">${escapeHtml(tag)}</span>`).join("")}
       </span>
     </span>
@@ -3350,9 +3388,10 @@ async function maybeRenderGameOfTheYearExportPreview() {
 
 async function gameOfTheYearExportHtml(year = state.gotyYear) {
   const picks = state.settings.gameOfTheYear?.[year]?.picks || {};
-  const statsGames = gameOfTheYearCandidateGames(year);
-  const categories = gameOfTheYearCategoriesForYear(year, statsGames);
-  if (!gameOfTheYearCategoriesValid(picks, categories, statsGames)) return "";
+  const candidates = gameOfTheYearCandidateGames(year);
+  const statsGames = gameOfTheYearFinishedStatsGames(year);
+  const categories = gameOfTheYearCategoriesForYear(year, candidates);
+  if (!gameOfTheYearCategoriesValid(picks, categories, candidates)) return "";
   const owner = cleanOwnerLabel(state.settings.defaultOwner) || DEFAULT_SETTINGS.defaultOwner;
   const rows = categories.map(([key, label]) => ({ label: tt(label), game: gameById(picks[key]), key })).filter((item) => item.game && gameOfTheYearGameAllowedForCategory(item.game, item.key));
   const theme = normalizeThemeSettings(state.settings);
@@ -3730,6 +3769,7 @@ function gameOfTheYearExportCss({ theme, main, accent, gradient, bg, glowPrimary
     }
     .goty-export-playtime-kpi strong {
       min-width: 0;
+      margin-top: 5px;
       overflow: hidden;
       color: ${accent};
       gap: 3px;
@@ -4951,7 +4991,7 @@ function achievementSetupNotices(psnData = {}, steamData = {}, xboxData = {}) {
   const status = state.integrationStatus || {};
   return [
     achievementPanelNotice(psnData, state.settings.psnUser, status.PSN_NPSSO, "Set up PSN", "Refresh PSN token", "https://ca.account.sony.com/api/v1/ssocookie"),
-    achievementPanelNotice(xboxData, state.settings.microsoftUser, status.OPENXBL_API_KEY, "Set up Xbox", "Check Xbox setup", xboxData.sourceUrl || "https://www.xbox.com/"),
+    achievementPanelNotice(xboxData, state.settings.microsoftUser, status.OPENXBL_API_KEY, "Set up Xbox", "Check Xbox setup", "https://xbl.io/"),
     achievementPanelNotice(steamData, state.settings.steamUser, status.STEAM_API_KEY, "Set up Steam", "Check Steam setup", steamData.sourceUrl || "https://steamcommunity.com/"),
   ].filter(Boolean);
 }
@@ -4973,10 +5013,10 @@ async function fetchXboxActivity(forceRefresh = state.settings.forceCacheOnLoad 
   if (state.settings.microsoftUser) params.set("user", state.settings.microsoftUser);
   const response = await fetch(`/api/xbox-achievements?${params}`, { cache: "no-store" });
   const data = await response.json().catch(() => emptyXboxActivity());
-  if (data.needsSetup) return { ...emptyXboxActivity(), source: "xbox", sourceUrl: data.sourceUrl || "https://www.xbox.com/", needsSetup: true, error: data.error || "" };
+  if (data.needsSetup) return { ...emptyXboxActivity(), source: "xbox", sourceUrl: data.sourceUrl || "https://xbl.io/", needsSetup: true, error: data.error || "" };
   if (!response.ok || data.authError || data.error) {
     if (!data.needsSetup) console.warn("[trophies] Xbox activity unavailable", data.error || response.status);
-    return { ...emptyXboxActivity(), source: "xbox", sourceUrl: data.sourceUrl || "https://www.xbox.com/", authError: Boolean(data.authError || data.error || !response.ok), error: data.error || "" };
+    return { ...emptyXboxActivity(), source: "xbox", sourceUrl: data.sourceUrl || "https://xbl.io/", authError: Boolean(data.authError || data.error || !response.ok), error: data.error || "" };
   }
   return data;
 }
@@ -6554,8 +6594,8 @@ function finishedStatsMarkup(year, games, completed) {
   const showPlaytimeKpi = shouldShowFinishedStatsPlaytimeKpi(year) && playtimeTotal;
   const kpiCards = [
     statsKpiCard(tt("Finished games"), finishedGames.length, showYearlyDetail ? statsGameList(finishedGames) : "", { tone: "finished" }),
-    showPlaytimeKpi ? statsKpiCard(tt("Total year playtime"), playtimeTotal, statsPlaytimeGameList(playtimeGames), { tone: "playtime", valueHtml: playtimeKpiValue(playtimeHours) }) : "",
     expansions.length ? statsKpiCard(tt("Expansions finished"), expansions.length, statsGameList(expansions), { tone: "finished" }) : "",
+    showPlaytimeKpi ? statsKpiCard(tt("Total year playtime"), playtimeTotal, statsPlaytimeGameList(playtimeGames), { tone: "playtime", valueHtml: playtimeKpiValue(playtimeHours) }) : "",
     statsKpiCard(tt("Completed games"), completed.length, showYearlyDetail ? statsCompletedGameList(completed) : "", { action: "completed", tone: "completed", icon: trophyIcon() }),
     streamed.length ? statsKpiCard(tt("Streamed games"), streamed.length, showYearlyDetail ? statsGameList(streamed) : "", { tone: "streamed" }) : "",
     coopGames.length ? statsKpiCard(tt("CoOp games"), coopGames.length, statsGameList(coopGames), { tone: "coop", icon: coopIcon() }) : "",
@@ -6565,7 +6605,7 @@ function finishedStatsMarkup(year, games, completed) {
   const kpiLayoutClass = kpiCards.length > 5 ? " is-grid-3" : "";
   return `
     <div class="finished-stats-kpis${kpiLayoutClass}">${cards}</div>
-    ${showPlaytimeKpi ? finishedStatsTopGamesCarouselMarkup(finishedGames, state.finishedStatsTopMode) : ""}
+    ${showPlaytimeKpi ? finishedStatsTopGamesCarouselMarkup(finishedGames, state.topGamesCarouselMode) : ""}
     <div class="finished-stats-charts ${allYears ? "is-all" : ""}">
       ${statsDonutCard(tt("Platforms"), platforms, "platform", 5, finishedGames)}
       ${statsDonutCard(tt("Categories"), tags, "category", 5, finishedGames)}
@@ -6583,35 +6623,48 @@ function finishedStatsMarkup(year, games, completed) {
 
 
 function finishedStatsTopGamesCarouselMarkup(games = [], mode = "time") {
-  const normalizedMode = mode === "grade" ? "grade" : "time";
-  const topGames = finishedStatsTopGames(games, normalizedMode).slice(0, 5);
+  const normalizedMode = normalizeTopGamesCarouselMode(mode);
+  const topGames = finishedStatsTopGames(games, normalizedMode).slice(0, 10);
   if (!topGames.length) return "";
   return `
     <section class="goty-stats-preview-playtime finished-stats-top-games" data-stats-top-games>
-      <div class="goty-stats-preview-section-head finished-stats-top-games-head">
-        <h3>${escapeHtml(tt("Top games of the year"))}</h3>
-        <div class="finished-stats-top-controls">
-          <label class="finished-stats-top-select">
-            <select data-stats-top-mode aria-label="${escapeHtml(tt("Top games order"))}">
-              <option value="time" ${normalizedMode === "time" ? "selected" : ""}>${escapeHtml(tt("Time"))}</option>
-              <option value="grade" ${normalizedMode === "grade" ? "selected" : ""}>${escapeHtml(tt("Grade"))}</option>
-            </select>
-          </label>
-          <div class="goty-stats-preview-navs">
-            <button class="icon-button playing-slider-button finished-stats-playtime-nav" type="button" data-finished-playtime-scroll="-1" title="${escapeHtml(tt("Previous games"))}" aria-label="${escapeHtml(tt("Previous games"))}">${gotyPickerArrowIcon("left")}</button>
-            <button class="icon-button playing-slider-button finished-stats-playtime-nav" type="button" data-finished-playtime-scroll="1" title="${escapeHtml(tt("Next games"))}" aria-label="${escapeHtml(tt("Next games"))}">${gotyPickerArrowIcon("right")}</button>
-          </div>
-        </div>
-      </div>
+      ${topGamesCarouselHeaderMarkup(normalizedMode, "finished")}
       <div class="goty-stats-preview-strip finished-stats-playtime-strip">
-        <div class="goty-stats-preview-list finished-stats-playtime-list">${topGames.map(gameOfTheYearStatsPreviewCard).join("")}</div>
+        <div class="goty-stats-preview-list finished-stats-playtime-list">${topGames.map((game) => gameOfTheYearStatsPreviewCard(game, normalizedMode)).join("")}</div>
       </div>
     </section>
   `;
 }
 
+function topGamesCarouselHeaderMarkup(mode = "time", context = "goty") {
+  const normalizedMode = normalizeTopGamesCarouselMode(mode);
+  const navClass = context === "finished" ? "finished-stats-playtime-nav" : "goty-stats-preview-nav";
+  const scrollAttribute = context === "finished" ? "data-finished-playtime-scroll" : "data-goty-preview-scroll";
+  return `
+    <div class="goty-stats-preview-section-head finished-stats-top-games-head">
+      <h3>${escapeHtml(tt("Top games of the year"))}</h3>
+      <div class="finished-stats-top-controls">
+        <label class="finished-stats-top-select">
+          <select data-top-games-mode aria-label="${escapeHtml(tt("Top games order"))}">
+            <option value="time" ${normalizedMode === "time" ? "selected" : ""}>${escapeHtml(tt("Time"))}</option>
+            <option value="grade" ${normalizedMode === "grade" ? "selected" : ""}>${escapeHtml(tt("Rating"))}</option>
+          </select>
+        </label>
+        <div class="goty-stats-preview-navs">
+          <button class="icon-button playing-slider-button ${navClass}" type="button" ${scrollAttribute}="-1" title="${escapeHtml(tt("Previous games"))}" aria-label="${escapeHtml(tt("Previous games"))}">${gotyPickerArrowIcon("left")}</button>
+          <button class="icon-button playing-slider-button ${navClass}" type="button" ${scrollAttribute}="1" title="${escapeHtml(tt("Next games"))}" aria-label="${escapeHtml(tt("Next games"))}">${gotyPickerArrowIcon("right")}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function normalizeTopGamesCarouselMode(mode = "time") {
+  return mode === "grade" ? "grade" : "time";
+}
+
 function finishedStatsTopGames(games = [], mode = "time") {
-  if (mode === "grade") {
+  if (normalizeTopGamesCarouselMode(mode) === "grade") {
     return [...games]
       .filter((game) => ratingScoreValue(game) != null)
       .sort((a, b) => (ratingScoreValue(b) || 0) - (ratingScoreValue(a) || 0) || statsPlaytimeHours(b) - statsPlaytimeHours(a) || stringCompare(a.title, b.title));
@@ -7114,11 +7167,12 @@ function statsPlatformLabel(game) {
 }
 
 function bindFinishedStatsTopGamesCarousel(scope = "all") {
-  const select = el.finishedStatsBody.querySelector("[data-stats-top-mode]");
+  const select = el.finishedStatsBody.querySelector("[data-top-games-mode]");
   select?.addEventListener("change", () => {
-    state.finishedStatsTopMode = select.value === "grade" ? "grade" : "time";
+    state.topGamesCarouselMode = normalizeTopGamesCarouselMode(select.value);
     renderFinishedStatsDialog(scope);
   });
+  syncStyledSelect(select);
   const list = el.finishedStatsBody.querySelector(".finished-stats-playtime-list");
   const strip = el.finishedStatsBody.querySelector(".finished-stats-playtime-strip");
   if (!list || !strip) return;
@@ -7160,12 +7214,12 @@ function bindFinishedStatsMobileOverlays() {
   });
 }
 
-function bindFinishedStatsDesktopOverlays() {
+function bindFinishedStatsDesktopOverlays(dialog = el.finishedStatsDialog, body = el.finishedStatsBody) {
   let closeTimer = null;
   const closeFloatingOverlay = () => {
     closeTimer = null;
-    el.finishedStatsDialog.querySelector(".finished-stats-hover-float")?.remove();
-    el.finishedStatsBody.querySelectorAll(".finished-stats-floating-source").forEach((node) => {
+    document.querySelector(".finished-stats-hover-float")?.remove();
+    body.querySelectorAll(".finished-stats-floating-source").forEach((node) => {
       node.classList.remove("finished-stats-floating-source");
     });
   };
@@ -7176,8 +7230,8 @@ function bindFinishedStatsDesktopOverlays() {
   const openFloatingContent = (sourceNode, content, className = "") => {
     if (window.matchMedia("(max-width: 760px)").matches || !content.trim()) return;
     clearTimeout(closeTimer);
-    el.finishedStatsDialog.querySelector(".finished-stats-hover-float")?.remove();
-    el.finishedStatsBody.querySelectorAll(".finished-stats-floating-source").forEach((node) => {
+    document.querySelector(".finished-stats-hover-float")?.remove();
+    body.querySelectorAll(".finished-stats-floating-source").forEach((node) => {
       node.classList.remove("finished-stats-floating-source");
     });
     sourceNode.classList.add("finished-stats-floating-source");
@@ -7185,25 +7239,24 @@ function bindFinishedStatsDesktopOverlays() {
     const floating = document.createElement("div");
     floating.className = `finished-stats-breakdown finished-stats-hover-float ${className}`.trim();
     floating.innerHTML = content;
-    el.finishedStatsDialog.appendChild(floating);
+    dialog.appendChild(floating);
 
-    const dialogRect = el.finishedStatsDialog.getBoundingClientRect();
     const sourceRect = sourceNode.getBoundingClientRect();
-    const width = Math.min(340, Math.max(220, dialogRect.width - 32));
+    const width = Math.min(340, Math.max(220, window.innerWidth - 32));
     floating.style.width = `${width}px`;
-    floating.style.maxWidth = `${Math.max(180, dialogRect.width - 32)}px`;
-    floating.style.maxHeight = `${Math.max(140, Math.min(250, dialogRect.height - 44))}px`;
+    floating.style.maxWidth = `${Math.max(180, window.innerWidth - 32)}px`;
+    floating.style.maxHeight = `${Math.max(140, Math.min(300, window.innerHeight - 32))}px`;
 
     const floatRect = floating.getBoundingClientRect();
     const gap = 8;
     const minLeft = 12;
-    const maxLeft = Math.max(minLeft, dialogRect.width - floatRect.width - 12);
-    const centeredLeft = sourceRect.left - dialogRect.left + (sourceRect.width / 2) - (floatRect.width / 2);
+    const maxLeft = Math.max(minLeft, window.innerWidth - floatRect.width - 12);
+    const centeredLeft = sourceRect.left + (sourceRect.width / 2) - (floatRect.width / 2);
     const left = clampNumber(centeredLeft, minLeft, maxLeft);
-    const belowTop = sourceRect.bottom - dialogRect.top + gap;
-    const aboveTop = sourceRect.top - dialogRect.top - floatRect.height - gap;
-    const canFitBelow = belowTop + floatRect.height <= dialogRect.height - 12;
-    const top = clampNumber(canFitBelow ? belowTop : aboveTop, 12, Math.max(12, dialogRect.height - floatRect.height - 12));
+    const belowTop = sourceRect.bottom + gap;
+    const aboveTop = sourceRect.top - floatRect.height - gap;
+    const canFitBelow = belowTop + floatRect.height <= window.innerHeight - 12;
+    const top = clampNumber(canFitBelow ? belowTop : aboveTop, 12, Math.max(12, window.innerHeight - floatRect.height - 12));
     floating.style.left = `${left}px`;
     floating.style.top = `${top}px`;
 
@@ -7216,13 +7269,13 @@ function bindFinishedStatsDesktopOverlays() {
     openFloatingContent(node, breakdown.innerHTML);
   };
 
-  el.finishedStatsBody.querySelectorAll("[data-stats-overlay-title]").forEach((node) => {
+  body.querySelectorAll("[data-stats-overlay-title]").forEach((node) => {
     node.addEventListener("mouseenter", () => openFloatingOverlay(node));
     node.addEventListener("mouseleave", scheduleClose);
     node.addEventListener("focusin", () => openFloatingOverlay(node));
     node.addEventListener("focusout", scheduleClose);
   });
-  el.finishedStatsBody.querySelectorAll(".finished-stats-donut").forEach((donut) => {
+  body.querySelectorAll(".finished-stats-donut").forEach((donut) => {
     donut.querySelectorAll(".finished-stats-pie-segment").forEach((segment) => {
       const indexClass = [...segment.classList].find((name) => name.startsWith("finished-stats-pie-segment-"));
       const index = indexClass?.replace("finished-stats-pie-segment-", "");
@@ -7561,6 +7614,10 @@ function gameOfTheYearCandidateGames(year) {
     .filter((game) => game.playing && !game.dlc)
     .forEach((game) => games.set(game.id, game));
   return [...games.values()];
+}
+
+function gameOfTheYearFinishedStatsGames(year) {
+  return completedGamesForYear(year).filter((game) => !game.dlc);
 }
 
 function gameOfTheYearTimeValue(game) {
@@ -9300,7 +9357,7 @@ function multiplayerBadge() {
 }
 
 function streamBadge() {
-  return `<span class="stream-pill">${streamPlayIcon()}<span>${escapeHtml(tt("Stream"))}</span></span>`;
+  return `<span class="stream-pill" title="${escapeHtml(tt("Stream"))}" aria-label="${escapeHtml(tt("Stream"))}">${streamPlayIcon()}</span>`;
 }
 
 function streamPlayIcon() {

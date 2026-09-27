@@ -1130,6 +1130,18 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
   filter: saturate(1.08);
 }
 
+.goty-card-empty {
+  cursor: default;
+  filter: none;
+}
+
+.goty-card-empty:hover,
+.goty-card-empty:focus-visible {
+  z-index: auto;
+  transform: none;
+  filter: none;
+}
+
 .goty-cover {
   display: block;
   width: 100%;
@@ -1160,6 +1172,16 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
   object-position: center;
   border-radius: 7px;
   clip-path: inset(0 round 7px);
+}
+
+.goty-empty-cover {
+  min-height: 174px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.055)),
+    color-mix(in srgb, var(--panel-strong) 72%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  opacity: 0.72;
 }
 
 .goty-category {
@@ -1286,7 +1308,8 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
 
 .goty-meta .chip.genre,
 .goty-meta .platform-badge,
-.goty-meta .goty-progress-pill {
+.goty-meta .goty-progress-pill,
+.goty-meta .rating-score-pill {
   min-height: 18px;
   padding: 3px 5px;
   font-size: 8px;
@@ -1314,6 +1337,27 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
 
 .goty-meta .goty-progress-pill strong {
   font-size: 9px;
+}
+
+.goty-meta .rating-score-pill {
+  gap: 3px;
+}
+
+.goty-meta .coop-pill,
+.goty-meta .multiplayer-pill {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+}
+
+.goty-meta .rating-score-star .rounded-star-icon,
+.goty-meta .coop-icon,
+.goty-meta .online-globe-icon {
+  width: 11px;
+  height: 11px;
+  flex-basis: 11px;
 }
 
 .goty-dialog .goty-modal {
@@ -1418,25 +1462,36 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
 }
 
 .finished-stats-top-select select {
-  width: 98px;
+  width: 104px;
   min-height: 34px;
   height: 34px;
-  padding: 5px 28px 5px 10px;
-  color: var(--accent-2);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04)),
-    rgba(15, 16, 20, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 8px;
+  padding: 5px 30px 5px 10px;
 }
 
-.finished-stats-top-select select:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-2) 68%, transparent);
-  outline-offset: 2px;
+.finished-stats-top-select .platform-logo-select {
+  --dropdown-control-height: 34px;
+  width: 104px;
+}
+
+.finished-stats-top-select .platform-logo-button {
+  height: 34px;
+  min-height: 34px;
+  padding: 0 30px 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.finished-stats-top-select .platform-logo-menu {
+  min-width: 104px;
+  max-width: 104px;
+}
+
+.finished-stats-top-select .platform-logo-option {
+  height: 30px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .goty-stats-preview-strip {
@@ -1531,9 +1586,9 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
 }
 
 .goty-stats-preview-badges {
-  display: inline-flex;
+  display: grid;
   align-items: center;
-  justify-self: start;
+  justify-self: stretch;
   gap: 5px;
   min-width: 0;
   max-width: 100%;
@@ -1549,17 +1604,28 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
   line-height: 1;
 }
 
-.goty-stats-preview-badges .platform-badge {
-  max-width: 74px;
+.goty-stats-preview-badges .platform-badge,
+.goty-stats-preview-card .goty-choice-title .platform-badge {
+  width: 100%;
+  max-width: none;
+  min-height: 24px;
   gap: 4px;
   padding: 2px 6px 2px 3px;
+  font-size: 9px;
 }
 
-.goty-stats-preview-badges .platform-icon {
+.goty-stats-preview-badges .platform-icon,
+.goty-stats-preview-card .goty-choice-title .platform-icon {
   width: 17px;
   height: 17px;
   min-width: 17px;
   border-radius: 5px;
+}
+
+.goty-stats-preview-card .goty-choice-title .platform-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .goty-stats-preview-badges .rating-score-pill {
@@ -1620,6 +1686,22 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
   border-radius: 6px;
 }
 
+.goty-stats-preview-time-row .rating-score-pill {
+  box-sizing: border-box;
+  height: 24px;
+  min-height: 24px;
+  gap: 3px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.goty-stats-preview-time-row .rounded-star-icon {
+  width: 11px;
+  height: 11px;
+}
+
 .goty-stats-preview-time-row .coop-icon,
 .goty-stats-preview-time-row .online-globe-icon {
   width: 13px;
@@ -1628,8 +1710,16 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
 }
 
 .goty-stats-preview-actions {
+  position: sticky;
+  bottom: 8px;
+  z-index: 18;
   display: grid;
-  padding-top: 12px;
+  justify-self: center;
+  width: min(760px, calc(100% - 32px));
+  box-sizing: border-box;
+  margin: -50px auto 0;
+  padding: 0;
+  background: none;
 }
 
 .goty-stats-preview-continue {
@@ -2108,19 +2198,23 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
 .goty-loading-overlay {
   position: fixed;
   inset: 0;
-  z-index: 120;
+  z-index: 2147483647;
   display: grid;
   place-items: center;
   padding: 18px;
-  pointer-events: none;
+  pointer-events: auto;
   opacity: 0;
-  background: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.24);
   backdrop-filter: blur(5px) saturate(1.04);
   transition: opacity 240ms ease;
 }
 
 .goty-loading-overlay.visible {
   opacity: 1;
+}
+
+body.goty-loading-active {
+  cursor: wait;
 }
 
 .goty-loading-window {
@@ -2387,6 +2481,18 @@ html.theme-gradient .goty-section .column-head h2 .trophy-icon {
 .playing-finished-tags .stream-pill span,
 .playing-finished-tags .stream-pill .stream-play-icon {
   color: #d7b8ff !important;
+}
+
+.playing-finished-tags .stream-pill {
+  width: 18px;
+  min-width: 18px;
+  padding: 0;
+}
+
+.playing-finished-tags .stream-pill .stream-play-icon {
+  width: 11px;
+  height: 11px;
+  flex-basis: 11px;
 }
 
 .playing-finished-tags .coop-pill span,
@@ -6711,6 +6817,18 @@ body.theme-kash .game-card.stream-card.completed-trophy-card {
   stroke: none;
 }
 
+.stream-pill {
+  justify-content: center;
+  width: 31px;
+  min-width: 31px;
+  padding-inline: 0;
+}
+
+.stream-pill .twitch-filter-logo-path {
+  fill: currentColor;
+  stroke: none;
+}
+
 .calendar-state-pill {
   gap: 5px;
   padding: 6px 10px;
@@ -7879,6 +7997,7 @@ body:not(.can-edit) .game-card:focus-within .edit-action {
     line-height: 1.2;
     text-align: center;
     white-space: normal;
+    display: none;
     opacity: 0;
     pointer-events: none;
     transform: translate(50%, 3px);
@@ -7891,6 +8010,7 @@ body:not(.can-edit) .game-card:focus-within .edit-action {
   .completed-stream-toggle[data-tooltip]:focus-visible::after,
   .playing-stream-toggle[data-tooltip]:hover::after,
   .playing-stream-toggle[data-tooltip]:focus-visible::after {
+    display: block;
     opacity: 1;
     transform: translate(50%, 0);
   }
@@ -7961,8 +8081,8 @@ body:not(.can-edit) .game-card:focus-within .edit-action {
 
 .finished-stats-dialog {
   width: min(920px, calc(100vw - 24px));
-  max-height: calc(100vh - 24px);
-  overflow: visible;
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
   border: 0;
   padding: 0;
   background: transparent;
@@ -7976,10 +8096,12 @@ body:not(.can-edit) .game-card:focus-within .edit-action {
 .finished-stats-modal {
   position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, auto);
+  align-content: start;
   width: min(920px, calc(100vw - 24px));
-  max-height: calc(100vh - 24px);
-  overflow: visible !important;
+  max-height: calc(100dvh - 24px);
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
   overscroll-behavior: contain;
   box-shadow:
     0 24px 80px rgba(0, 0, 0, 0.48),
@@ -8003,10 +8125,9 @@ body:not(.can-edit) .game-card:focus-within .edit-action {
   display: grid;
   gap: 14px;
   min-height: 0;
-  max-height: calc(100vh - 118px);
-  padding: 0 2px 18px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  max-height: none;
+  padding: 0 2px 6px;
+  overflow: visible;
   overscroll-behavior: contain;
 }
 
@@ -8969,7 +9090,7 @@ body.theme-kash .finished-stats-kpi.is-completed:focus-visible strong {
 }
 
 .finished-stats-hover-float {
-  position: absolute;
+  position: fixed;
   right: auto;
   bottom: auto;
   z-index: 180;
@@ -9782,6 +9903,24 @@ body.theme-kash .playing-finished-game.completed-trophy-card:hover {
   line-height: 21px;
 }
 
+.completed-platform .stream-pill {
+  width: 21px;
+  min-width: 21px;
+  padding: 0;
+}
+
+.completed-platform .stream-pill .stream-play-icon {
+  width: 12px;
+  height: 12px;
+  flex-basis: 12px;
+}
+
+.game-row .stream-pill {
+  width: 22px;
+  min-width: 22px;
+  padding: 0;
+}
+
 .completed-platform .coop-pill,
 .completed-platform .multiplayer-pill {
   width: 25px;
@@ -10233,6 +10372,13 @@ body.dialog-open .mobile-section-tabs {
     center;
   border-radius: 8px;
   backdrop-filter: blur(8px) saturate(1.08);
+}
+
+.finished-stats-modal {
+  grid-template-rows: auto minmax(0, auto);
+  align-content: start;
+  max-height: calc(100dvh - 24px);
+  overflow: hidden !important;
 }
 
 .settings-modal {
@@ -15659,6 +15805,12 @@ html.theme-light .finish-trophy-check input[type="checkbox"]:checked {
   .finished-stats-body {
     padding: 0 1px 18px;
     overflow: visible;
+  }
+
+  .goty-stats-preview-actions {
+    bottom: 7px;
+    width: calc(100% - 18px);
+    margin-top: -44px;
   }
 
   .finished-stats-charts {

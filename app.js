@@ -235,6 +235,7 @@ const state = {
   integrationStatus: null,
   steamOwnedAppIds: null,
   cardTrophies: {},
+  cardPlaytime: {},
   platinumCoverCache: loadPlatinumCoverCache(),
   settings: initialSettings,
   filters: { query: "", platform: "all", tag: "all", sort: mainSortForDefault(initialSettings.defaultOrder), direction: "asc", preordered: false },
@@ -563,6 +564,8 @@ async function init() {
   if (await maybeRenderGameOfTheYearExportPreview()) return;
   render();
   if (cloudChanged) render();
+  void refreshPlayingCardPlaytime();
+  window.setInterval(refreshPlayingCardPlaytime, 5 * 60 * 1000);
   const requestedParams = new URLSearchParams(location.search);
   const requestedEdit = requestedParams.get("edit");
   const requestedGame = requestedParams.get("game");
@@ -1237,6 +1240,9 @@ function bindEvents() {
   [el.finishTimeInput, el.fields.finishHours].forEach((input) => input?.addEventListener("input", () => {
     input.value = input.value.replace(/\D.*$/, "");
   }));
+  el.fields.length?.addEventListener("change", () => {
+    el.fields.length.value = approximatePlaytimeHours(el.fields.length.value) || "";
+  });
   el.fields.replayCount.addEventListener("input", syncReplaySection);
   el.form.addEventListener("submit", saveFromForm);
   el.deleteButton.addEventListener("click", deleteCurrentGame);
@@ -8473,6 +8479,11 @@ function finishHoursValue(value) {
   return Number.isFinite(count) ? Math.max(0, Math.round(count)) : 0;
 }
 
+function approximatePlaytimeHours(value) {
+  const hours = Number(value);
+  return Number.isFinite(hours) && hours > 0 ? Math.ceil(hours) : 0;
+}
+
 function finishHoursText(game) {
   const hours = finishHoursValue(game?.finishHours);
   if (!hours) return "";
@@ -9316,7 +9327,7 @@ function metaFor(game, options = {}) {
   if (game.emulator) values.push(`<span class="emulator-pill">Emulator</span>`);
   if (game.coop) values.push(coopBadge());
   if (game.multiplayer && !game.coop) values.push(multiplayerBadge());
-  if (game.lengthHours) values.push(timeBadge(game.lengthHours, hltbUrlFor(game)));
+  if (game.lengthHours && !game.playing) values.push(timeBadge(game.lengthHours, hltbUrlFor(game)));
   if (game.stream) values.push(streamBadge());
   gameStatuses(game).forEach((status) => values.push(statusBadge(status)));
   const progress = achievementProgressForGame(game);
@@ -9690,7 +9701,7 @@ function cardTrophiesFor(game) {
   const cached = cacheKey ? state.cardTrophies[cacheKey] : null;
   if (psn && !cached) loadCardTrophies(game, psn);
   const guideLinks = guideLinksFor(game);
-  const guideRow = guideLinks.length ? `<div class="guide-links card-guide-row">${guideLinks.join("")}</div>` : "";
+  const guideRow = state.canEdit && guideLinks.length ? `<div class="guide-links card-guide-row">${guideLinks.join("")}</div>` : "";
   const trophies = cached?.trophies?.length ? cached.trophies : latestTrophiesForGame(game, 3);
   if (!trophies.length && cached?.loading) {
     return `${guideRow}<div class="card-trophy-head">${trophyIcon()}<span>Loading trophies...</span></div>`;
@@ -9716,7 +9727,7 @@ function cardSteamAchievementsFor(game) {
   const cached = cacheKey ? state.cardTrophies[cacheKey] : null;
   if (cacheKey && !cached && steamGameIsOwned(game)) loadCardSteamAchievements(game);
   const guideLinks = guideLinksFor(game);
-  const guideRow = guideLinks.length ? `<div class="guide-links card-guide-row">${guideLinks.join("")}</div>` : "";
+  const guideRow = state.canEdit && guideLinks.length ? `<div class="guide-links card-guide-row">${guideLinks.join("")}</div>` : "";
   if (cached?.loading) {
     return `${guideRow}<div class="card-trophy-head card-achievement-head">${trophyIcon()}<span>Loading achievements...</span></div>`;
   }
@@ -9747,7 +9758,7 @@ function cardSteamAchievementsFor(game) {
 function cardXboxAchievementsFor(game) {
   const xboxGame = matchedXboxGame(game);
   const guideLinks = guideLinksFor(game);
-  const guideRow = guideLinks.length ? `<div class="guide-links card-guide-row">${guideLinks.join("")}</div>` : "";
+  const guideRow = state.canEdit && guideLinks.length ? `<div class="guide-links card-guide-row">${guideLinks.join("")}</div>` : "";
   if (!xboxGame) return guideRow;
   const cacheKey = xboxAchievementCacheKey(xboxGame);
   const cached = cacheKey ? state.cardTrophies[cacheKey] : null;
@@ -9967,11 +9978,71 @@ function playDatesFor(game, options = {}) {
   if (options.includePreorder && game.preorderStore) values.push(preorderChip(game.preorderStore));
   else if (options.includePreorder && game.preferredStore) values.push(preferredPreorderChip(game.preferredStore));
   if (game.startedAt) values.push(`<span class="history-pill history-date-pill"><small>${escapeHtml(tt("Started"))}</small><strong>${escapeHtml(formatDate(game.startedAt))}</strong></span>`);
+  const livePlaytime = game.playing ? Number(state.cardPlaytime[game.id]) : 0;
+  if (livePlaytime > 0) values.push(livePlaytimePill(game, livePlaytime));
   if (game.completedAt) values.push(`<span class="history-pill history-date-pill"><small>${escapeHtml(tt("Finished"))}</small><strong>${escapeHtml(formatDate(game.completedAt))}</strong></span>`);
   if (options.includeCalendarState) values.push(calendarStateForGame(game));
   const finishTime = finishHoursText(game);
   if (finishTime) values.push(playTimeHistoryPill(finishTime, finishHoursValue(game.finishHours)));
   return values;
+}
+
+async function refreshPlayingCardPlaytime() {
+  if (document.hidden) return;
+  const playingGames = state.games.filter((game) => game.playing && !game.deletedAt);
+  await Promise.all(playingGames.map(async (game) => {
+    const hours = await linkedPlatformPlaytimeHours(game);
+    if (hours == null || !Number.isFinite(hours) || hours <= 0) return;
+    state.cardPlaytime[game.id] = Math.ceil(hours);
+    document.querySelectorAll(`.game-card[data-id="${CSS.escape(game.id)}"] .play-dates`).forEach((dates) => {
+      const value = state.cardPlaytime[game.id];
+      let pill = dates.querySelector(".live-playtime-pill");
+      if (!pill) {
+        dates.insertAdjacentHTML("beforeend", livePlaytimePill(game, value));
+        pill = dates.querySelector(".live-playtime-pill");
+      }
+      pill.style.cssText = livePlaytimePillStyle(game, value);
+      pill.querySelector("strong").textContent = `${value} ${value === 1 ? "HR" : "HRS"}`;
+      pill.querySelector(".live-playtime-expanded").innerHTML = livePlaytimeExpandedMarkup(game, value);
+      const comparison = livePlaytimeComparison(game, value);
+      pill.style.setProperty("--live-playtime-hover-width", `${livePlaytimeHoverWidth(comparison)}px`);
+      pill.dataset.comparison = comparison;
+      pill.title = comparison;
+      pill.setAttribute("aria-label", comparison);
+      dates.hidden = false;
+    });
+  }));
+}
+
+function livePlaytimePill(game, hours) {
+  const label = livePlaytimeComparison(game, hours);
+  return `<span class="history-pill history-date-pill playtime-date-pill live-playtime-pill" style="${livePlaytimePillStyle(game, hours)};--live-playtime-hover-width:${livePlaytimeHoverWidth(label)}px" data-comparison="${escapeHtml(label)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><small>${escapeHtml(tt("Play Time"))}</small><strong>${hours} ${hours === 1 ? "HR" : "HRS"}</strong><span class="live-playtime-expanded">${livePlaytimeExpandedMarkup(game, hours)}</span></span>`;
+}
+
+function livePlaytimeExpandedMarkup(game, hours) {
+  const current = `${hours} ${hours === 1 ? "HR" : "HRS"}`;
+  const estimate = Math.ceil(Number(game?.lengthHours));
+  return estimate > 0
+    ? `<span class="live-playtime-current">${current}</span><span class="live-playtime-estimate">OF ${estimate} HRS</span>`
+    : `<span class="live-playtime-current">${current} PLAYED</span>`;
+}
+
+function livePlaytimePillStyle(game, hours) {
+  const estimate = Number(game?.lengthHours);
+  const estimateHours = Number.isFinite(estimate) && estimate > 0 ? estimate : hours;
+  const estimateHue = Math.round(132 - (132 * Math.max(0, Math.min(1, (estimateHours - 7) / 53))));
+  return `${timePillStyle(hours)};--time-estimate-color:hsl(${estimateHue}, 88%, 56%)`;
+}
+
+function livePlaytimeComparison(game, hours) {
+  const estimate = Math.ceil(Number(game?.lengthHours));
+  return estimate > 0
+    ? `${hours} HRS OUT OF ${estimate} HRS`
+    : `${hours} ${hours === 1 ? "HR" : "HRS"} PLAYED`;
+}
+
+function livePlaytimeHoverWidth(label) {
+  return Math.min(280, Math.max(138, Math.ceil(String(label).length * 7 + 14)));
 }
 
 function calendarStateForGame(game) {
@@ -10806,6 +10877,7 @@ function normalizeGameRecord(game) {
   normalized.playing = Boolean(normalized.playing);
   normalized.replayCount = replayCountValue(normalized.replayCount);
   normalized.finishHours = finishHoursValue(normalized.finishHours);
+  normalized.lengthHours = approximatePlaytimeHours(normalized.lengthHours) || null;
   normalized.ratings = normalizeGameRatings(normalized.ratings);
   normalized.startedAt = dateOnly(normalized.startedAt);
   normalized.completedAt = dateOnly(normalized.completedAt);
@@ -11675,7 +11747,7 @@ async function saveCurrentFormGame() {
     releaseDate,
     releaseText,
     releaseRefreshLocked,
-    lengthHours: el.fields.length.value ? Number(el.fields.length.value) : null,
+    lengthHours: approximatePlaytimeHours(el.fields.length.value) || null,
     finishHours: finishHoursValue(el.fields.finishHours.value),
     ratings: ratingInputsValue(el.playingRatingGrid),
     startedAt,
@@ -11852,7 +11924,7 @@ async function linkedPlatformPlaytimeHours(game) {
       if (!response.ok) return null;
       const data = await response.json();
       const hours = Number(data.playtimeHours);
-      return Number.isFinite(hours) && hours > 0 ? Math.round(hours) : null;
+      return Number.isFinite(hours) && hours > 0 ? Math.ceil(hours) : null;
     }
     if (isPcGame(game) && state.settings.steamUser) {
       const appId = steamAppIdFor(game);
@@ -12282,7 +12354,7 @@ function applyLookup(result) {
   el.fields.title.value = result.title || el.fields.title.value;
   el.fields.releaseDate.value = result.releaseDate || el.fields.releaseDate.value;
   el.fields.releaseText.value = result.releaseDate ? "" : (result.releaseText || el.fields.releaseText.value);
-  el.fields.length.value = result.lengthHours || el.fields.length.value;
+  el.fields.length.value = approximatePlaytimeHours(result.lengthHours) || el.fields.length.value;
   el.fields.cover.value = result.cover || el.fields.cover.value;
   el.fields.description.value = result.description || el.fields.description.value;
   el.fields.igdbUrl.value = result.igdbUrl || el.fields.igdbUrl.value;

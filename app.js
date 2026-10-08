@@ -1,4 +1,4 @@
-import { normalizeSearchText, createGameCardShell, bindActivityCardParallax, mountActivitySlider, mountTwitchPreview, mountReleaseCalendar, finishedGameMarkup, achievementCardMarkup, achievementDashboardMarkup, achievementPanelMarkup, completedCardMarkup, horizontalCarouselState, syncViewModeButton, slideHorizontalCarousel, comparePlayingGames, finishedDurationText, timeBadgeMarkup, guideLinksMarkup, storeButtonsMarkup, activityTrailerUrl, activityTrailerFrameMarkup, preloadPausedActivityTrailers, activityReleaseStatus, activityCoverOverride, activityAllowsPsnCardTrophies, formatFooterDate, formatFooterDateTime, formatFooterShortDate, confirmGameDelete } from "./activity-ui.js";
+import { normalizeSearchText, bindModalTouchGuard, createGameCardShell, bindActivityCardParallax, mountActivitySlider, mountTwitchPreview, mountReleaseCalendar, finishedGameMarkup, achievementCardMarkup, achievementDashboardMarkup, achievementPanelMarkup, completedCardMarkup, horizontalCarouselState, syncViewModeButton, slideHorizontalCarousel, comparePlayingGames, finishedDurationText, timeBadgeMarkup, guideLinksMarkup, storeButtonsMarkup, activityTrailerUrl, activityTrailerFrameMarkup, preloadPausedActivityTrailers, activityReleaseStatus, activityCoverOverride, activityAllowsPsnCardTrophies, formatFooterDate, formatFooterDateTime, formatFooterShortDate, confirmGameDelete } from "./activity-ui.js";
 import { applySiteTheme, normalizeThemeSettings, openThemeEditor, ownerCardColorClass, ownerColorClass, themeSettingsButton } from "./theme-system.js";
 import { applyDocumentTranslations, languageOptions, normalizeLanguage, t } from "./i18n.js";
 import { accountSettingsMarkup } from "./account-settings-ui.js";
@@ -682,7 +682,7 @@ function bindTextureParallax() {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   let frame = 0;
   window.addEventListener("pointermove", (event) => {
-    if (frame) return;
+    if (event.pointerType === "touch" || frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
       const x = ((event.clientX / window.innerWidth) - 0.5) * -14;
@@ -918,6 +918,7 @@ async function clearSiteCachesAndReload() {
 }
 
 function bindEvents() {
+  bindModalTouchGuard();
   syncStyledSelect(el.detailTrophySort);
   el.brandLink.addEventListener("click", (event) => {
     event.preventDefault();
@@ -992,6 +993,7 @@ function bindEvents() {
   document.addEventListener("focusin", handleSelectOverflowTitle);
   document.addEventListener("pointerout", handleSelectOverflowLeave);
   document.addEventListener("focusout", handleSelectOverflowLeave);
+  document.addEventListener("click", toggleLivePlaytimePill, true);
   document.addEventListener("click", closePlatformLogoSelects);
   document.addEventListener("change", (event) => {
     if (event.target.matches?.("select")) updateSelectOverflowTitle(event.target);
@@ -10005,9 +10007,8 @@ async function refreshPlayingCardPlaytime() {
       pill.querySelector("strong").textContent = `${value} ${value === 1 ? "HR" : "HRS"}`;
       pill.querySelector(".live-playtime-expanded").innerHTML = livePlaytimeExpandedMarkup(game, value);
       const comparison = livePlaytimeComparison(game, value);
-      pill.style.setProperty("--live-playtime-hover-width", `${livePlaytimeHoverWidth(comparison)}px`);
       pill.dataset.comparison = comparison;
-      pill.title = comparison;
+      pill.removeAttribute("title");
       pill.setAttribute("aria-label", comparison);
       dates.hidden = false;
     });
@@ -10016,7 +10017,17 @@ async function refreshPlayingCardPlaytime() {
 
 function livePlaytimePill(game, hours) {
   const label = livePlaytimeComparison(game, hours);
-  return `<span class="history-pill history-date-pill playtime-date-pill live-playtime-pill" style="${livePlaytimePillStyle(game, hours)};--live-playtime-hover-width:${livePlaytimeHoverWidth(label)}px" data-comparison="${escapeHtml(label)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><small>${escapeHtml(tt("Play Time"))}</small><strong>${hours} ${hours === 1 ? "HR" : "HRS"}</strong><span class="live-playtime-expanded">${livePlaytimeExpandedMarkup(game, hours)}</span></span>`;
+  return `<span class="history-pill history-date-pill playtime-date-pill live-playtime-pill" style="${livePlaytimePillStyle(game, hours)}" data-comparison="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" aria-expanded="false"><small>${escapeHtml(tt("Play Time"))}</small><strong>${hours} ${hours === 1 ? "HR" : "HRS"}</strong><span class="live-playtime-expanded">${livePlaytimeExpandedMarkup(game, hours)}</span></span>`;
+}
+
+function toggleLivePlaytimePill(event) {
+  if (!window.matchMedia("(hover: none)").matches) return;
+  const pill = event.target?.closest?.(".live-playtime-pill");
+  if (!pill) return;
+  event.stopPropagation();
+  pill.classList.add("is-tap-controlled");
+  const expanded = pill.classList.toggle("is-expanded");
+  pill.setAttribute("aria-expanded", String(expanded));
 }
 
 function livePlaytimeExpandedMarkup(game, hours) {
@@ -10030,8 +10041,9 @@ function livePlaytimeExpandedMarkup(game, hours) {
 function livePlaytimePillStyle(game, hours) {
   const estimate = Number(game?.lengthHours);
   const estimateHours = Number.isFinite(estimate) && estimate > 0 ? estimate : hours;
+  const actualHue = Math.round(132 - (132 * Math.max(0, Math.min(1, (Number(hours) - 7) / 53))));
   const estimateHue = Math.round(132 - (132 * Math.max(0, Math.min(1, (estimateHours - 7) / 53))));
-  return `${timePillStyle(hours)};--time-estimate-color:hsl(${estimateHue}, 88%, 56%)`;
+  return `${timePillStyle(hours)};--time-color-solid:hsl(${actualHue}, 88%, 56%);--time-light-solid:hsl(${Math.min(140, actualHue + 10)}, 94%, 72%);--time-dark-solid:hsl(${Math.max(0, actualHue - 8)}, 82%, 39%);--time-estimate-color:hsl(${estimateHue}, 88%, 56%);--time-estimate-color-solid:hsl(${estimateHue}, 88%, 56%)`;
 }
 
 function livePlaytimeComparison(game, hours) {
@@ -10039,10 +10051,6 @@ function livePlaytimeComparison(game, hours) {
   return estimate > 0
     ? `${hours} HRS OUT OF ${estimate} HRS`
     : `${hours} ${hours === 1 ? "HR" : "HRS"} PLAYED`;
-}
-
-function livePlaytimeHoverWidth(label) {
-  return Math.min(280, Math.max(138, Math.ceil(String(label).length * 7 + 14)));
 }
 
 function calendarStateForGame(game) {

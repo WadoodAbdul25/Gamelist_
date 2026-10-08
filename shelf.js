@@ -1,4 +1,4 @@
-import { normalizeSearchText, createGameCardShell, bindActivityCardParallax, mountActivitySlider, mountTwitchPreview, mountReleaseCalendar, finishedGameMarkup, achievementCardMarkup, achievementDashboardMarkup, achievementPanelMarkup, completedCardMarkup, horizontalCarouselState, syncViewModeButton, slideHorizontalCarousel, comparePlayingGames, timeBadgeMarkup, guideLinksMarkup, storeButtonsMarkup, activityTrailerUrl, preloadPausedActivityTrailers, syncFocusedActivityTrailer, activityReleaseStatus, activityCoverOverride, activityLocalGameForTitle, activityTitleMatchScore, activityAllowsPsnCardTrophies, formatFooterDate, formatFooterDateTime, formatFooterShortDate, confirmGameDelete } from "./activity-ui.js";
+import { normalizeSearchText, bindModalTouchGuard, createGameCardShell, bindActivityCardParallax, mountActivitySlider, mountTwitchPreview, mountReleaseCalendar, finishedGameMarkup, achievementCardMarkup, achievementDashboardMarkup, achievementPanelMarkup, completedCardMarkup, horizontalCarouselState, syncViewModeButton, slideHorizontalCarousel, comparePlayingGames, timeBadgeMarkup, guideLinksMarkup, storeButtonsMarkup, activityTrailerUrl, preloadPausedActivityTrailers, syncFocusedActivityTrailer, activityReleaseStatus, activityCoverOverride, activityLocalGameForTitle, activityTitleMatchScore, activityAllowsPsnCardTrophies, formatFooterDate, formatFooterDateTime, formatFooterShortDate, confirmGameDelete } from "./activity-ui.js";
 import { applySiteTheme, normalizeThemeSettings, openThemeEditor, ownerCardColorClass, ownerColorClass, themeSettingsButton } from "./theme-system.js";
 import { applyDocumentTranslations, languageOptions, normalizeLanguage, t } from "./i18n.js";
 import { initShelfAccounts } from "./shelf-accounts.js";
@@ -303,6 +303,7 @@ function applyShelfSearchFromUrl() {
 function loadSharedSettings() { try { return JSON.parse(localStorage.getItem("gamelist:settings:v1") || "{}"); } catch { return {}; } }
 
 function bindEvents() {
+  bindModalTouchGuard();
   syncStyledSelect(el.detailTrophySort);
   el.brandLink?.addEventListener("click", (event) => {
     event.preventDefault();
@@ -355,6 +356,7 @@ function bindEvents() {
   document.addEventListener("focusin", handleSelectOverflowTitle);
   document.addEventListener("pointerout", handleSelectOverflowLeave);
   document.addEventListener("focusout", handleSelectOverflowLeave);
+  document.addEventListener("click", toggleShelfLivePlaytimePill, true);
 
   el.shelf.addEventListener("click", handleShelfClick);
   el.shelf.addEventListener("keydown", (event) => { if (event.key !== "Enter" && event.key !== " ") return; const card = event.target.closest("[data-id]"); if (!card || event.target.closest("button, a, input")) return; event.preventDefault(); const game = shelfDisplayedGameById(card.dataset.id); if (game) game.preorderProjection ? openGamelistDetails(game) : openDetails(game); });
@@ -3594,7 +3596,7 @@ function removeLocalStorageItem(key) {
 function isStorageQuotaError(error) {
   return error?.name === "QuotaExceededError" || error?.code === 22 || error?.code === 1014;
 }
-function bindTextureParallax() { if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; let frame = 0; window.addEventListener("pointermove", (event) => { if (frame) return; frame = requestAnimationFrame(() => { frame = 0; const x = ((event.clientX / window.innerWidth) - .5) * -14; const y = ((event.clientY / window.innerHeight) - .5) * -14; document.documentElement.style.setProperty("--grid-x", `${x.toFixed(2)}px`); document.documentElement.style.setProperty("--grid-y", `${y.toFixed(2)}px`); }); }, { passive: true }); }
+function bindTextureParallax() { if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; let frame = 0; window.addEventListener("pointermove", (event) => { if (event.pointerType === "touch" || frame) return; frame = requestAnimationFrame(() => { frame = 0; const x = ((event.clientX / window.innerWidth) - .5) * -14; const y = ((event.clientY / window.innerHeight) - .5) * -14; document.documentElement.style.setProperty("--grid-x", `${x.toFixed(2)}px`); document.documentElement.style.setProperty("--grid-y", `${y.toFixed(2)}px`); }); }, { passive: true }); }
 function renderGamelistModules() {
   const playing = state.gamelistGames.filter((game) => game.playing && !game.deletedAt).sort(comparePlayingGames);
   const finished = state.gamelistGames.filter((game) => game.completedAt && !game.deletedAt).sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)) || String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base" })).slice(0, 10);
@@ -3796,11 +3798,11 @@ async function refreshShelfPlayingCardPlaytime() {
         dates.insertAdjacentHTML("beforeend", shelfLivePlaytimePill(game, value));
         pill = dates.querySelector(".live-playtime-pill");
       }
-      pill.style.cssText = `${shelfLivePlaytimePillStyle(game, value)};--live-playtime-hover-width:${shelfLivePlaytimeHoverWidth(label)}px`;
+      pill.style.cssText = shelfLivePlaytimePillStyle(game, value);
       pill.querySelector("strong").textContent = `${value} ${value === 1 ? "HR" : "HRS"}`;
       pill.querySelector(".live-playtime-expanded").innerHTML = shelfLivePlaytimeExpandedMarkup(game, value);
       pill.dataset.comparison = label;
-      pill.title = label;
+      pill.removeAttribute("title");
       pill.setAttribute("aria-label", label);
       pill.querySelector("strong").textContent = `${value} ${value === 1 ? "HR" : "HRS"}`;
       dates.hidden = false;
@@ -3863,7 +3865,17 @@ async function linkedShelfPlaytimeHours(game) {
 
 function shelfLivePlaytimePill(game, hours) {
   const label = shelfLivePlaytimeComparison(game, hours);
-  return `<span class="history-pill history-date-pill playtime-date-pill live-playtime-pill" style="${shelfLivePlaytimePillStyle(game, hours)};--live-playtime-hover-width:${shelfLivePlaytimeHoverWidth(label)}px" data-comparison="${escapeHtml(label)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><small>${escapeHtml(tt("Play Time"))}</small><strong>${hours} ${hours === 1 ? "HR" : "HRS"}</strong><span class="live-playtime-expanded">${shelfLivePlaytimeExpandedMarkup(game, hours)}</span></span>`;
+  return `<span class="history-pill history-date-pill playtime-date-pill live-playtime-pill" style="${shelfLivePlaytimePillStyle(game, hours)}" data-comparison="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" aria-expanded="false"><small>${escapeHtml(tt("Play Time"))}</small><strong>${hours} ${hours === 1 ? "HR" : "HRS"}</strong><span class="live-playtime-expanded">${shelfLivePlaytimeExpandedMarkup(game, hours)}</span></span>`;
+}
+
+function toggleShelfLivePlaytimePill(event) {
+  if (!window.matchMedia("(hover: none)").matches) return;
+  const pill = event.target?.closest?.(".live-playtime-pill");
+  if (!pill) return;
+  event.stopPropagation();
+  pill.classList.add("is-tap-controlled");
+  const expanded = pill.classList.toggle("is-expanded");
+  pill.setAttribute("aria-expanded", String(expanded));
 }
 
 function shelfLivePlaytimeExpandedMarkup(game, hours) {
@@ -3877,17 +3889,14 @@ function shelfLivePlaytimeExpandedMarkup(game, hours) {
 function shelfLivePlaytimePillStyle(game, hours) {
   const estimate = Number(game?.lengthHours);
   const estimateHours = Number.isFinite(estimate) && estimate > 0 ? estimate : hours;
+  const actualHue = Math.round(132 - (132 * Math.max(0, Math.min(1, (Number(hours) - 7) / 53))));
   const estimateHue = Math.round(132 - (132 * Math.max(0, Math.min(1, (estimateHours - 7) / 53))));
-  return `${shelfTimePillStyle(hours)};--time-estimate-color:hsl(${estimateHue}, 88%, 56%)`;
+  return `${shelfTimePillStyle(hours)};--time-color-solid:hsl(${actualHue}, 88%, 56%);--time-light-solid:hsl(${Math.min(140, actualHue + 10)}, 94%, 72%);--time-dark-solid:hsl(${Math.max(0, actualHue - 8)}, 82%, 39%);--time-estimate-color:hsl(${estimateHue}, 88%, 56%);--time-estimate-color-solid:hsl(${estimateHue}, 88%, 56%)`;
 }
 
 function shelfLivePlaytimeComparison(game, hours) {
   const estimate = Math.ceil(Number(game?.lengthHours));
   return estimate > 0 ? `${hours} HRS OUT OF ${estimate} HRS` : `${hours} ${hours === 1 ? "HR" : "HRS"} PLAYED`;
-}
-
-function shelfLivePlaytimeHoverWidth(label) {
-  return Math.min(280, Math.max(138, Math.ceil(String(label).length * 7 + 14)));
 }
 
 function shelfTimePillStyle(hours) {

@@ -1,5 +1,5 @@
 import { normalizeSearchText, bindModalTouchGuard, createGameCardShell, bindActivityCardParallax, mountActivitySlider, mountTwitchPreview, mountReleaseCalendar, finishedGameMarkup, achievementCardMarkup, achievementDashboardMarkup, achievementPanelMarkup, completedCardMarkup, horizontalCarouselState, syncViewModeButton, slideHorizontalCarousel, comparePlayingGames, finishedDurationText, timeBadgeMarkup, guideLinksMarkup, storeButtonsMarkup, activityTrailerUrl, activityTrailerFrameMarkup, preloadPausedActivityTrailers, activityReleaseStatus, activityCoverOverride, activityAllowsPsnCardTrophies, formatFooterDate, formatFooterDateTime, formatFooterShortDate, confirmGameDelete } from "./activity-ui.js";
-import { applySiteTheme, normalizeThemeSettings, openThemeEditor, ownerCardColorClass, ownerColorClass, themeSettingsButton } from "./theme-system.js";
+import { applySiteTheme, normalizeThemeSettings, ownerCardColorClass, ownerColorClass, themeSettingsContent, bindThemeSettingsContent, readThemeSettingsContent } from "./theme-system.js";
 import { applyDocumentTranslations, languageOptions, normalizeLanguage, t } from "./i18n.js";
 import { accountSettingsMarkup } from "./account-settings-ui.js";
 
@@ -225,6 +225,11 @@ function syncSharedViewModeFromStorage() {
   state.completedVisiblePages = 1;
   render();
 }
+
+let settingsDirty = false;
+let settingsSnapshot = null;
+let settingsExitDestination = "";
+let gameEditorDirty = false;
 
 const state = {
   games: [],
@@ -456,6 +461,7 @@ const el = {
   settingsRegion: document.querySelector("#settingsRegion"),
   settingsLanguage: document.querySelector("#settingsLanguage"),
   settingsStores: document.querySelector("#settingsStores"),
+  settingsThemeEditor: document.querySelector("#settingsThemeEditor"),
   settingsDefaultOwner: document.querySelector("#settingsDefaultOwner"),
   settingsDevFeatures: document.querySelector("#settingsDevFeatures"),
   detailTitle: document.querySelector("#detailTitle"),
@@ -930,12 +936,36 @@ function bindEvents() {
     scrollToSearchArea();
   });
   el.loginButton.addEventListener("click", toggleEditMode);
+  document.querySelector("#settingsLogoutButton")?.addEventListener("click", () => {
+    el.settingsDialog.close();
+    toggleEditMode();
+  });
   el.addButton.addEventListener("click", quickAddGame);
   el.floatingAddButton.addEventListener("click", quickAddGame);
   el.searchButton?.addEventListener("click", scrollToSearchArea);
   el.floatingSearchButton?.addEventListener("click", scrollToSearchArea);
   el.syncButton.addEventListener("click", syncNow);
   el.settingsButton?.addEventListener("click", openSettingsDialog);
+  el.settingsDialog?.querySelectorAll("[data-settings-panel]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const panel = button.dataset.settingsPanel;
+      const home = document.querySelector("#settingsHome");
+      if (home) home.hidden = true;
+      const sectionTitle = button.querySelector(".settings-category-text strong")?.textContent.trim() || "Settings";
+      document.querySelector("#settingsDialogEyebrow").textContent = "Settings";
+      document.querySelector("#settingsDialogTitle").hidden = true;
+      document.querySelector("#settingsDialogSectionTitle").textContent = sectionTitle;
+      document.querySelector("#settingsDialogBackTitle").hidden = false;
+      el.settingsDialog.querySelectorAll("[data-settings-window]").forEach((section) => {
+        section.hidden = section.dataset.settingsWindow !== panel;
+      });
+      el.settingsDialog.classList.add("has-settings-window");
+      el.settingsDialog.querySelector(".settings-modal")?.scrollTo({ top: 0 });
+    });
+  });
+  el.settingsDialog?.querySelectorAll("[data-settings-back]").forEach((button) => {
+    button.addEventListener("click", () => requestSettingsExit("back"));
+  });
   el.authCloseButton?.addEventListener("click", () => el.authDialog.close("cancel"));
   el.authCancelButton?.addEventListener("click", () => el.authDialog.close("cancel"));
   el.fetchDataButton?.addEventListener("click", refreshAllGameData);
@@ -1125,11 +1155,40 @@ function bindEvents() {
   el.dialog.addEventListener("click", (event) => {
     if (event.target === el.dialog) event.preventDefault();
   });
-  el.settingsCloseButton?.addEventListener("click", () => el.settingsDialog.close());
+  el.settingsCloseButton?.addEventListener("click", () => requestSettingsExit("close"));
   el.settingsDialog?.addEventListener("click", (event) => {
-    if (event.target === el.settingsDialog) el.settingsDialog.close();
+    if (event.target === el.settingsDialog) {
+      event.preventDefault();
+      requestSettingsExit("close");
+    }
+  });
+  el.settingsDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    requestSettingsExit("close");
   });
   el.settingsDialog?.addEventListener("close", syncScrollLock);
+  el.settingsForm?.addEventListener("input", () => { settingsDirty = true; });
+  el.settingsForm?.addEventListener("change", () => { settingsDirty = true; });
+  el.settingsForm?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-layout-move], [data-owner-add], [data-owner-remove]")) settingsDirty = true;
+  });
+  document.querySelector("#settingsUnsavedDialog")?.querySelector("[data-settings-unsaved-cancel]")?.addEventListener("click", () => {
+    document.querySelector("#settingsUnsavedDialog").close();
+    settingsExitDestination = "";
+  });
+  document.querySelector("#settingsUnsavedDialog")?.querySelector("[data-settings-unsaved-save]")?.addEventListener("click", async () => {
+    const destination = settingsExitDestination;
+    document.querySelector("#settingsUnsavedDialog").close();
+    settingsExitDestination = "";
+    await saveSettingsFromForm({ preventDefault() {} }, { close: destination === "close" });
+  });
+  document.querySelector("#settingsUnsavedDialog")?.querySelector("[data-settings-unsaved-discard]")?.addEventListener("click", () => {
+    const destination = settingsExitDestination;
+    document.querySelector("#settingsUnsavedDialog").close();
+    settingsExitDestination = "";
+    discardSettingsChanges(destination);
+  });
+  document.querySelector("#settingsUnsavedDialog")?.addEventListener("cancel", () => { settingsExitDestination = ""; });
   el.settingsIgdbOpen?.addEventListener("click", () => {
     el.settingsIgdbIntro.hidden = false;
     el.settingsIgdbSteps.hidden = false;
@@ -1248,7 +1307,29 @@ function bindEvents() {
   el.fields.replayCount.addEventListener("input", syncReplaySection);
   el.form.addEventListener("submit", saveFromForm);
   el.deleteButton.addEventListener("click", deleteCurrentGame);
-  el.closeDialogButton.addEventListener("click", () => el.dialog.close());
+  el.closeDialogButton.addEventListener("click", requestGameEditorClose);
+  el.form.addEventListener("input", () => { gameEditorDirty = true; });
+  el.form.addEventListener("change", () => { gameEditorDirty = true; });
+  el.dialog.addEventListener("cancel", (event) => {
+    if (!gameEditorDirty) return;
+    event.preventDefault();
+    showGameEditorUnsavedDialog();
+  });
+  el.dialog.addEventListener("click", (event) => {
+    if (event.target !== el.dialog) return;
+    event.preventDefault();
+    if (gameEditorDirty) showGameEditorUnsavedDialog();
+  });
+  document.querySelector("#editorUnsavedDialog [data-editor-unsaved-cancel]")?.addEventListener("click", () => document.querySelector("#editorUnsavedDialog").close());
+  document.querySelector("#editorUnsavedDialog [data-editor-unsaved-save]")?.addEventListener("click", () => {
+    document.querySelector("#editorUnsavedDialog").close();
+    el.form.requestSubmit(el.form.querySelector("button[type='submit']"));
+  });
+  document.querySelector("#editorUnsavedDialog [data-editor-unsaved-discard]")?.addEventListener("click", () => {
+    gameEditorDirty = false;
+    document.querySelector("#editorUnsavedDialog").close();
+    el.dialog.close();
+  });
   el.lookupButton.addEventListener("click", lookupGame);
   el.lookupInput.addEventListener("input", queueTitleLookup);
   el.lookupInput.addEventListener("keydown", (event) => {
@@ -1764,6 +1845,7 @@ function render() {
   el.loginButton.innerHTML = state.canEdit ? `<span class="button-icon" aria-hidden="true">${exitIcon()}</span>` : pencilIcon();
   el.loginButton.title = state.canEdit ? tt("Stop Editing") : tt("Edit");
   el.loginButton.setAttribute("aria-label", el.loginButton.title);
+  el.loginButton.hidden = state.canEdit;
   el.addButton.hidden = false;
   el.syncButton.hidden = !state.canEdit;
   if (el.settingsButton) el.settingsButton.hidden = !state.canEdit;
@@ -1866,7 +1948,17 @@ function applyPageOrder() {
 
 function openSettingsDialog() {
   if (!state.canEdit || window.matchMedia("(max-width: 760px)").matches) return;
+  el.settingsDialog.querySelectorAll("[data-settings-window]").forEach((section) => { section.hidden = true; });
+  const settingsHome = document.querySelector("#settingsHome");
+  if (settingsHome) settingsHome.hidden = false;
+  el.settingsDialog.classList.remove("has-settings-window");
+  document.querySelector("#settingsDialogEyebrow").textContent = "Site settings";
+  document.querySelector("#settingsDialogTitle").textContent = "Settings";
+  document.querySelector("#settingsDialogTitle").hidden = false;
+  document.querySelector("#settingsDialogBackTitle").hidden = true;
   renderSettingsDialog();
+  settingsDirty = false;
+  settingsSnapshot = JSON.parse(JSON.stringify(state.settings));
   el.settingsDialog.showModal();
   refreshIgdbConnectionStatus();
   refreshNintendoConnectionStatus();
@@ -1874,6 +1966,47 @@ function openSettingsDialog() {
   refreshSteamApiStatus();
   refreshXboxApiStatus();
   syncScrollLock();
+}
+
+function requestSettingsExit(destination) {
+  if (!settingsDirty) {
+    finishSettingsExit(destination);
+    return;
+  }
+  settingsExitDestination = destination;
+  const saveButton = document.querySelector("[data-settings-unsaved-save]");
+  const discardButton = document.querySelector("[data-settings-unsaved-discard]");
+  if (saveButton) saveButton.textContent = destination === "back" ? "Go back and save" : "Close and save";
+  if (discardButton) discardButton.textContent = destination === "back" ? "Go back and don't save" : "Close and don't save";
+  document.querySelector("#settingsUnsavedDialog")?.showModal();
+}
+
+function finishSettingsExit(destination) {
+  if (destination === "close") {
+    el.settingsDialog.close();
+    return;
+  }
+  el.settingsDialog.querySelectorAll("[data-settings-window]").forEach((section) => { section.hidden = true; });
+  const home = document.querySelector("#settingsHome");
+  if (home) home.hidden = false;
+  el.settingsDialog.classList.remove("has-settings-window");
+  document.querySelector("#settingsDialogEyebrow").textContent = "Site settings";
+  document.querySelector("#settingsDialogTitle").hidden = false;
+  document.querySelector("#settingsDialogBackTitle").hidden = true;
+  el.settingsDialog.querySelector(".settings-modal")?.scrollTo({ top: 0 });
+}
+
+function discardSettingsChanges(destination) {
+  if (settingsSnapshot) state.settings = JSON.parse(JSON.stringify(settingsSnapshot));
+  state.completedStreamMode = streamFilterPriorityForSettings(state.settings);
+  settingsDirty = false;
+  render();
+  if (destination === "close") {
+    el.settingsDialog.close();
+    return;
+  }
+  renderSettingsDialog();
+  finishSettingsExit("back");
 }
 
 function setIgdbConnectionState() {
@@ -2449,13 +2582,16 @@ function renderSettingsDialog() {
     settingsLayoutItem("playing", -1, { fixed: true }),
     settingsLayoutItem("latestFinished", -1, { fixed: true }),
     ...state.settings.pageOrder.map((key) => settingsLayoutItem(key, pageIndex.get(key) ?? 0)),
-    `<div class="settings-preference-separator" role="presentation"></div><div class="settings-preference-row">${settingsThemeItem()}${settingsDefaultOrderItem()}${settingsWeekStartItem()}${settingsShelfSyncItem()}${settingsPageSwitchItem()}${settingsPrioritizeFinishedStreamItem()}${settingsHideNonStreamPlayingItem()}</div>`,
+    `<div class="settings-preference-separator" role="presentation"></div><div class="settings-preference-row">${settingsDefaultOrderItem()}${settingsWeekStartItem()}${settingsShelfSyncItem()}${settingsPageSwitchItem()}${settingsPrioritizeFinishedStreamItem()}${settingsHideNonStreamPlayingItem()}</div>`,
   ].join("");
+  el.settingsThemeEditor.innerHTML = themeSettingsContent(state.settings, tt);
+  bindThemeSettingsContent(el.settingsThemeEditor, tt);
   document.querySelector("#settingsCsvData").innerHTML = settingsCsvDataItem();
   if (el.settingsDevFeatures) el.settingsDevFeatures.innerHTML = settingsDevFeaturesItem("gamelist");
   el.settingsStores.innerHTML = STORE_OPTIONS.map((store) => `
     <label class="check-filter toggle-check settings-store-check">
       <input type="checkbox" value="${escapeHtml(store)}" ${state.settings.stores.includes(store) ? "checked" : ""}>
+      <img class="settings-store-icon" src="${escapeHtml(storeIcon(store))}" alt="" aria-hidden="true" loading="lazy">
       <span>${escapeHtml(store)}</span>
     </label>
   `).join("");
@@ -2477,21 +2613,6 @@ function renderSettingsDialog() {
       state.settings.hiddenSections = [...hidden].filter((key) => LAYOUT_SECTION_KEYS.includes(key));
       renderSettingsDialog();
     });
-  });
-  el.settingsLayoutList.querySelector("[data-theme-editor]")?.addEventListener("click", () => {
-    openThemeEditor({
-      settings: state.settings,
-      page: "gamelist",
-      translate: tt,
-      onSave: async (settings) => {
-        state.settings = normalizeSettings(settings);
-        persistLocalSettings();
-        await persistCloud();
-        renderSettingsDialog();
-        render();
-      },
-    });
-    requestAnimationFrame(() => syncStyledSelects(document.querySelector("#themeEditorDialog"), { activeValue: null }));
   });
   el.settingsLayoutList.querySelector("[data-default-order]")?.addEventListener("change", (event) => {
     state.settings.defaultOrder = event.target.value;
@@ -2545,8 +2666,8 @@ function settingsLayoutItem(key, index, options = {}) {
       <strong>${escapeHtml(title)}</strong>
       <div class="settings-layout-actions">
         ${fixed ? `<span class="settings-fixed-label">Fixed</span>` : `
-          <button class="icon-button" type="button" data-layout-key="${escapeHtml(key)}" data-layout-move="-1" ${index === 0 ? "disabled" : ""} title="Move up" aria-label="Move ${escapeHtml(title)} up">↑</button>
-          <button class="icon-button" type="button" data-layout-key="${escapeHtml(key)}" data-layout-move="1" ${index === state.settings.pageOrder.length - 1 ? "disabled" : ""} title="Move down" aria-label="Move ${escapeHtml(title)} down">↓</button>
+          <button class="icon-button" type="button" data-layout-key="${escapeHtml(key)}" data-layout-move="-1" ${index === 0 ? "disabled" : ""} title="Move up" aria-label="Move ${escapeHtml(title)} up"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-7 7 7-7 7 7"/></svg></button>
+          <button class="icon-button" type="button" data-layout-key="${escapeHtml(key)}" data-layout-move="1" ${index === state.settings.pageOrder.length - 1 ? "disabled" : ""} title="Move down" aria-label="Move ${escapeHtml(title)} down"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m7-7-7 7-7-7"/></svg></button>
         `}
         <label class="check-filter toggle-check settings-visible-check" title="${visible ? "Visible" : "Hidden"}">
           <input type="checkbox" value="${escapeHtml(key)}" data-layout-hidden ${visible ? "checked" : ""}>
@@ -2566,10 +2687,6 @@ function moveSettingsLayoutItem(key, delta) {
   state.settings.pageOrder = order;
   renderSettingsDialog();
   applyPageOrder();
-}
-
-function settingsThemeItem() {
-  return themeSettingsButton(state.settings, escapeHtml, tt);
 }
 
 function settingsDefaultOrderItem() {
@@ -3166,7 +3283,7 @@ async function importGameOfTheYearCsv() {
   }
 }
 
-async function saveSettingsFromForm(event) {
+async function saveSettingsFromForm(event, { close = true } = {}) {
   event.preventDefault();
   const previousCurrency = state.settings.currency;
   const previousDefaultOrder = state.settings.defaultOrder;
@@ -3175,11 +3292,12 @@ async function saveSettingsFromForm(event) {
     .filter((store) => STORE_OPTIONS.includes(store))
     .slice(0, MAX_PRICE_STORES);
   const visibleSections = new Set([...el.settingsLayoutList.querySelectorAll("[data-layout-hidden]:checked")].map((input) => input.value));
+  const customTheme = readThemeSettingsContent(el.settingsThemeEditor, state.settings);
   state.settings = normalizeSettings({
     ...state.settings,
     hiddenSections: LAYOUT_SECTION_KEYS.filter((key) => !visibleSections.has(key)),
-    theme: state.settings.theme,
-    customTheme: state.settings.customTheme,
+    theme: "custom",
+    customTheme,
     defaultOrder: el.settingsLayoutList.querySelector("[data-default-order]")?.value || state.settings.defaultOrder,
     psnUser: el.settingsPsnUser.value,
     microsoftUser: el.settingsMicrosoftUser.value,
@@ -3202,7 +3320,9 @@ async function saveSettingsFromForm(event) {
   state.completedStreamMode = streamFilterPriorityForSettings(state.settings);
   persistLocalSettings();
   await persistCloud();
-  el.settingsDialog.close();
+  settingsDirty = false;
+  settingsSnapshot = JSON.parse(JSON.stringify(state.settings));
+  if (close) el.settingsDialog.close();
   state.cardTrophies = {};
   if (previousDefaultOrder !== state.settings.defaultOrder) {
     applyDefaultOrder(state.settings.defaultOrder);
@@ -3212,6 +3332,7 @@ async function saveSettingsFromForm(event) {
   render();
   syncPagePullTransition();
   if (previousCurrency !== state.settings.currency) await refreshAllPrices();
+  if (!close) finishSettingsExit("back");
 }
 
 function renderModeToggle(button, mode) {
@@ -6777,6 +6898,7 @@ function syncStyledSelect(select, options = {}) {
   const selectOptions = [...select.options].map((option) => ({
     value: option.value,
     label: option.textContent.trim(),
+    flag: option.dataset.flag || "",
     selected: option.selected,
     disabled: option.disabled || option.hidden,
     fontFamily: option.style.fontFamily || "",
@@ -6786,12 +6908,12 @@ function syncStyledSelect(select, options = {}) {
   control.classList.toggle("is-active", options.activeValue != null && selected.value !== options.activeValue);
   control.innerHTML = `
     <button class="platform-logo-button" type="button" aria-haspopup="listbox" aria-expanded="false" data-full-label="${escapeHtml(selected.label)}" aria-label="${escapeHtml(selected.label)}">
-      ${platformLogoChoiceMarkup(selected.value, selected.label, { logos: useLogos, fontFamily: selected.fontFamily })}
+      ${platformLogoChoiceMarkup(selected.value, selected.label, { logos: useLogos, fontFamily: selected.fontFamily, flag: selected.flag })}
     </button>
     <div class="platform-logo-menu" role="listbox">
       ${visibleOptions.map((option) => `
         <button class="platform-logo-option ${option.selected ? "is-selected" : ""}" type="button" role="option" aria-selected="${option.selected ? "true" : "false"}" data-value="${escapeHtml(option.value)}" data-full-label="${escapeHtml(option.label)}">
-          ${platformLogoChoiceMarkup(option.value, option.label, { logos: useLogos, fontFamily: option.fontFamily })}
+          ${platformLogoChoiceMarkup(option.value, option.label, { logos: useLogos, fontFamily: option.fontFamily, flag: option.flag })}
         </button>
       `).join("")}
     </div>
@@ -6884,6 +7006,7 @@ function platformLogoChoiceMarkup(value, label, options = {}) {
   const fontStyle = options.fontFamily ? ` style="font-family:${escapeHtml(options.fontFamily)}"` : "";
   return `
     <span class="platform-logo-choice ${escapeHtml(cls)}">
+      ${options.flag ? `<span class="platform-logo-choice-icon settings-region-flag-icon"><img src="${escapeHtml(options.flag)}" alt="" width="22" height="16" decoding="async"></span>` : ""}
       ${showLogo ? `<span class="platform-logo-choice-icon"><img src="${escapeHtml(platformLogo(value))}" alt="" width="18" height="18" decoding="async"></span>` : ""}
       <span class="platform-logo-choice-label"${fontStyle}>${escapeHtml(label)}</span>
     </span>
@@ -9329,7 +9452,7 @@ function metaFor(game, options = {}) {
   if (game.emulator) values.push(`<span class="emulator-pill">Emulator</span>`);
   if (game.coop) values.push(coopBadge());
   if (game.multiplayer && !game.coop) values.push(multiplayerBadge());
-  if (game.lengthHours && !game.playing) values.push(timeBadge(game.lengthHours, hltbUrlFor(game)));
+  if (game.lengthHours && !game.playing && !game.completedAt) values.push(timeBadge(game.lengthHours, hltbUrlFor(game)));
   if (game.stream) values.push(streamBadge());
   gameStatuses(game).forEach((status) => values.push(statusBadge(status)));
   const progress = achievementProgressForGame(game);
@@ -11627,6 +11750,7 @@ async function openEditor(id = "") {
   syncDialogPriceVisibility();
   syncStyledSelect(el.fields.section, { activeValue: null });
   syncNewGameRequiredHighlights();
+  gameEditorDirty = false;
   pauseAllPlayingTrailers();
   el.dialog.showModal();
   syncScrollLock();
@@ -11639,6 +11763,7 @@ async function addGameFromSearch(query, section = "wanted") {
   el.lookupInput.value = title;
   el.fields.title.value = title;
   if (["wanted", "released", "backlog"].includes(section)) el.fields.section.value = section;
+  gameEditorDirty = true;
   syncDialogPriceVisibility();
   syncNewGameRequiredHighlights();
   queueTitleLookup();
@@ -11698,12 +11823,25 @@ async function saveFromForm(event) {
   event.preventDefault();
   const existing = state.games.find((game) => game.id === el.fields.id.value);
   const game = await saveCurrentFormGame();
+  gameEditorDirty = false;
   state.finishSetupId = "";
   el.dialog.close();
   if (shouldCreatePreorderCalendarEvent(existing, game)) {
     await createPreorderCalendarEvent(game);
   }
   refreshPricesForGame(game.id, { silent: true });
+}
+
+function requestGameEditorClose() {
+  if (gameEditorDirty) {
+    showGameEditorUnsavedDialog();
+    return;
+  }
+  el.dialog.close();
+}
+
+function showGameEditorUnsavedDialog() {
+  document.querySelector("#editorUnsavedDialog")?.showModal();
 }
 
 async function saveCurrentFormGame() {
@@ -12092,7 +12230,10 @@ function restoreCompletedToBacklog(id) {
 }
 
 async function deleteCurrentGame() {
-  if (state.editingId && await deleteGame(state.editingId)) el.dialog.close();
+  if (state.editingId && await deleteGame(state.editingId)) {
+    gameEditorDirty = false;
+    el.dialog.close();
+  }
 }
 
 async function deleteGame(id) {
@@ -12675,6 +12816,7 @@ async function refreshCurrentPrices() {
   const title = el.fields.title.value.trim();
   if (!title) return;
   const savedGame = await saveCurrentFormGame();
+  gameEditorDirty = false;
   if (!shouldFetchPricesForGame(savedGame)) return;
   el.pricesButton.textContent = tt("Refreshing...");
   showToast(tt("Fetching prices..."));

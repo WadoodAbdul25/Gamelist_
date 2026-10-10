@@ -340,6 +340,12 @@ const el = {
   floatingEditActions: document.querySelector("#floatingEditActions"),
   floatingAddButton: document.querySelector("#floatingAddButton"),
   floatingSearchButton: document.querySelector("#floatingSearchButton"),
+  mobileActionDock: document.querySelector("#mobileActionDock"),
+  mobileDockAdd: document.querySelector("#mobileDockAdd"),
+  mobileDockUp: document.querySelector("#mobileDockUp"),
+  mobileDockSearch: document.querySelector("#mobileDockSearch"),
+  mobileDockSettings: document.querySelector("#mobileDockSettings"),
+  mobileDockSwitch: document.querySelector("#mobileDockSwitch"),
   mobileTabs: document.querySelectorAll("[data-mobile-section]"),
   board: document.querySelector(".board"),
   detailDialog: document.querySelector("#detailDialog"),
@@ -410,6 +416,8 @@ const el = {
   preorderStoreFieldIcon: document.querySelector(".preorder-store-field-icon"),
   preferredStoreFieldIcon: document.querySelector(".preferred-store-field-icon"),
   settingsLayoutList: document.querySelector("#settingsLayoutList"),
+  settingsPreferencesBeforeCurrency: document.querySelector("#settingsPreferencesBeforeCurrency"),
+  settingsPreferencesAfterLanguage: document.querySelector("#settingsPreferencesAfterLanguage"),
   settingsPsnUser: document.querySelector("#settingsPsnUser"),
   settingsIgdbIntro: document.querySelector("#settingsIgdbIntro"),
   settingsIgdbSteps: document.querySelector("#settingsIgdbSteps"),
@@ -464,6 +472,8 @@ const el = {
   settingsThemeEditor: document.querySelector("#settingsThemeEditor"),
   settingsDefaultOwner: document.querySelector("#settingsDefaultOwner"),
   settingsDevFeatures: document.querySelector("#settingsDevFeatures"),
+  settingsDevPanelFeatures: document.querySelector("#settingsDevPanelFeatures"),
+  settingsDevHome: document.querySelector("#settingsDevHome"),
   detailTitle: document.querySelector("#detailTitle"),
   detailStudio: document.querySelector("#detailStudio"),
   detailMeta: document.querySelector("#detailMeta"),
@@ -704,8 +714,7 @@ function bindTextureParallax() {
 }
 
 function quickAddGame() {
-  scrollToSearchArea();
-  window.setTimeout(() => openEditor(), 180);
+  openEditor();
 }
 
 function registerServiceWorker() {
@@ -933,7 +942,7 @@ function bindEvents() {
       window.open(twitchUrl, "_blank", "noopener,noreferrer");
       return;
     }
-    scrollToSearchArea();
+    scrollToGameList();
   });
   el.loginButton.addEventListener("click", toggleEditMode);
   document.querySelector("#settingsLogoutButton")?.addEventListener("click", () => {
@@ -942,10 +951,19 @@ function bindEvents() {
   });
   el.addButton.addEventListener("click", quickAddGame);
   el.floatingAddButton.addEventListener("click", quickAddGame);
+  el.mobileDockAdd?.addEventListener("click", quickAddGame);
   el.searchButton?.addEventListener("click", scrollToSearchArea);
   el.floatingSearchButton?.addEventListener("click", scrollToSearchArea);
+  el.mobileDockSearch?.addEventListener("click", scrollToSearchArea);
   el.syncButton.addEventListener("click", syncNow);
   el.settingsButton?.addEventListener("click", openSettingsDialog);
+  el.mobileDockSettings?.addEventListener("click", openSettingsDialog);
+  el.mobileDockSwitch?.addEventListener("click", () => {
+    if (pageSwitchHidden()) return;
+    const transitionButton = document.querySelector(".page-pull-switch");
+    if (transitionButton) transitionButton.click();
+    else window.location.href = pullNavigationUrl("shelf");
+  });
   el.settingsDialog?.querySelectorAll("[data-settings-panel]").forEach((button) => {
     button.addEventListener("click", () => {
       const panel = button.dataset.settingsPanel;
@@ -1125,6 +1143,7 @@ function bindEvents() {
     if (document.body.classList.contains("dialog-open")) return;
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
+  el.mobileDockUp?.addEventListener("click", () => el.scrollTopButton.click());
   el.detailCloseButton.addEventListener("click", () => el.detailDialog.close());
   el.detailDialog.addEventListener("click", (event) => {
     if (event.target === el.detailDialog) el.detailDialog.close();
@@ -1166,7 +1185,14 @@ function bindEvents() {
     event.preventDefault();
     requestSettingsExit("close");
   });
-  el.settingsDialog?.addEventListener("close", syncScrollLock);
+  el.settingsDialog?.addEventListener("close", () => {
+    syncScrollLock();
+    if (el.mobileDockSettings) {
+      el.mobileDockSettings.disabled = false;
+      el.mobileDockSettings.classList.remove("is-active");
+      el.mobileDockSettings.setAttribute("aria-pressed", "false");
+    }
+  });
   el.settingsForm?.addEventListener("input", () => { settingsDirty = true; });
   el.settingsForm?.addEventListener("change", () => { settingsDirty = true; });
   el.settingsForm?.addEventListener("click", (event) => {
@@ -1372,17 +1398,9 @@ function initPagePullTransition({ targetLabel, targetUrl }) {
   let pageDragArmed = false;
   let pageDragging = false;
   let moved = false;
-  const mobilePullQuery = window.matchMedia("(max-width: 760px)");
   const pagePullThreshold = () => Math.min(260, Math.max(150, window.innerHeight * 0.34));
   const isAtPageTop = () => window.scrollY <= 2 && document.documentElement.scrollTop <= 2 && document.body.scrollTop <= 2;
-  const canStartPagePull = (event) => {
-    if (!mobilePullQuery.matches || pageSwitchHidden() || document.body.classList.contains("dialog-open")) return false;
-    if (event.pointerType && event.pointerType !== "touch") return false;
-    if (event.button != null && event.button !== 0) return false;
-    if (!isAtPageTop()) return false;
-    const interactive = event.target?.closest?.("button, a, input, select, textarea, dialog, .platform-logo-menu, .playing-list, .playing-finished-list");
-    return !interactive || interactive.classList?.contains("cover-button");
-  };
+  const canStartPagePull = () => false;
   const setPull = (distance) => {
     const pull = Math.max(0, Math.min(window.innerHeight, distance));
     const progress = Math.min(1, pull / pagePullThreshold());
@@ -1849,6 +1867,9 @@ function render() {
   el.addButton.hidden = false;
   el.syncButton.hidden = !state.canEdit;
   if (el.settingsButton) el.settingsButton.hidden = !state.canEdit;
+  if (el.mobileDockSettings) el.mobileDockSettings.hidden = !state.canEdit;
+  setSettingsAuthLoading(false);
+  if (el.mobileDockSwitch) el.mobileDockSwitch.hidden = pageSwitchHidden();
   if (el.fetchDataButton) el.fetchDataButton.hidden = true;
   el.fetchPricesButton.hidden = !state.canEdit;
   if (state.canEdit && !el.fetchPricesButton.disabled) el.fetchPricesButton.innerHTML = `${currencyIcon()}<span class="button-label">${escapeHtml(tt("Fetch New Prices"))}</span>`;
@@ -1947,7 +1968,7 @@ function applyPageOrder() {
 }
 
 function openSettingsDialog() {
-  if (!state.canEdit || window.matchMedia("(max-width: 760px)").matches) return;
+  if (!state.canEdit) return;
   el.settingsDialog.querySelectorAll("[data-settings-window]").forEach((section) => { section.hidden = true; });
   const settingsHome = document.querySelector("#settingsHome");
   if (settingsHome) settingsHome.hidden = false;
@@ -1960,6 +1981,11 @@ function openSettingsDialog() {
   settingsDirty = false;
   settingsSnapshot = JSON.parse(JSON.stringify(state.settings));
   el.settingsDialog.showModal();
+  if (el.mobileDockSettings) {
+    el.mobileDockSettings.disabled = true;
+    el.mobileDockSettings.classList.add("is-active");
+    el.mobileDockSettings.setAttribute("aria-pressed", "true");
+  }
   refreshIgdbConnectionStatus();
   refreshNintendoConnectionStatus();
   refreshPsnConnectionStatus();
@@ -1977,7 +2003,7 @@ function requestSettingsExit(destination) {
   const saveButton = document.querySelector("[data-settings-unsaved-save]");
   const discardButton = document.querySelector("[data-settings-unsaved-discard]");
   if (saveButton) saveButton.textContent = destination === "back" ? "Go back and save" : "Close and save";
-  if (discardButton) discardButton.textContent = destination === "back" ? "Go back and don't save" : "Close and don't save";
+  if (discardButton) discardButton.textContent = destination === "back" ? "Go back without saving" : "Close without saving";
   document.querySelector("#settingsUnsavedDialog")?.showModal();
 }
 
@@ -2582,12 +2608,27 @@ function renderSettingsDialog() {
     settingsLayoutItem("playing", -1, { fixed: true }),
     settingsLayoutItem("latestFinished", -1, { fixed: true }),
     ...state.settings.pageOrder.map((key) => settingsLayoutItem(key, pageIndex.get(key) ?? 0)),
-    `<div class="settings-preference-separator" role="presentation"></div><div class="settings-preference-row">${settingsDefaultOrderItem()}${settingsWeekStartItem()}${settingsShelfSyncItem()}${settingsPageSwitchItem()}${settingsPrioritizeFinishedStreamItem()}${settingsHideNonStreamPlayingItem()}</div>`,
+  ].join("");
+  el.settingsPreferencesBeforeCurrency.innerHTML = [
+    settingsShelfSyncItem(),
+    settingsPageSwitchItem(),
+    settingsDefaultOrderItem(),
+  ].join("");
+  el.settingsPreferencesAfterLanguage.innerHTML = [
+    settingsWeekStartItem(),
+    settingsPrioritizeFinishedStreamItem(),
+    settingsHideNonStreamPlayingItem(),
   ].join("");
   el.settingsThemeEditor.innerHTML = themeSettingsContent(state.settings, tt);
   bindThemeSettingsContent(el.settingsThemeEditor, tt);
   document.querySelector("#settingsCsvData").innerHTML = settingsCsvDataItem();
-  if (el.settingsDevFeatures) el.settingsDevFeatures.innerHTML = settingsDevFeaturesItem("gamelist");
+  const isShabiiOwner = isShabiiMainOwner();
+  if (el.settingsDevHome) el.settingsDevHome.hidden = !isShabiiOwner;
+  const devCategory = el.settingsDialog.querySelector("[data-settings-panel='dev']");
+  if (devCategory) devCategory.hidden = isShabiiOwner;
+  const devMarkup = settingsDevFeaturesItem("gamelist");
+  if (el.settingsDevFeatures) el.settingsDevFeatures.innerHTML = isShabiiOwner ? devMarkup : "";
+  if (el.settingsDevPanelFeatures) el.settingsDevPanelFeatures.innerHTML = isShabiiOwner ? "" : devMarkup;
   el.settingsStores.innerHTML = STORE_OPTIONS.map((store) => `
     <label class="check-filter toggle-check settings-store-check">
       <input type="checkbox" value="${escapeHtml(store)}" ${state.settings.stores.includes(store) ? "checked" : ""}>
@@ -2614,10 +2655,10 @@ function renderSettingsDialog() {
       renderSettingsDialog();
     });
   });
-  el.settingsLayoutList.querySelector("[data-default-order]")?.addEventListener("change", (event) => {
+  el.settingsDialog.querySelector("[data-default-order]")?.addEventListener("change", (event) => {
     state.settings.defaultOrder = event.target.value;
   });
-  el.settingsLayoutList.querySelector("[data-week-start]")?.addEventListener("change", (event) => {
+  el.settingsDialog.querySelector("[data-week-start]")?.addEventListener("change", (event) => {
     state.settings.weekStart = normalizeWeekStart(event.target.value);
     renderReleaseCalendar();
   });
@@ -2724,9 +2765,9 @@ function settingsShelfSyncItem() {
     <article class="settings-layout-card settings-sync-card" data-layout-key="shelf-sync">
       <div class="settings-wire wire-list" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="settings-theme-select">
-        <span>${escapeHtml(tt("Shelf Sync"))}</span>
+        <span>${escapeHtml(tt("Sync games with Shelf"))}</span>
         <div class="settings-check-field">
-          <label class="check-filter toggle-check settings-visible-check" title="${escapeHtml(tt("Shelf Sync"))}">
+          <label class="check-filter toggle-check settings-visible-check" title="${escapeHtml(tt("Sync games with Shelf"))}">
             <input type="checkbox" data-shelf-sync ${state.settings.shelfSync ? "checked" : ""}>
             <span>${escapeHtml(tt("Enabled"))}</span>
           </label>
@@ -3298,7 +3339,7 @@ async function saveSettingsFromForm(event, { close = true } = {}) {
     hiddenSections: LAYOUT_SECTION_KEYS.filter((key) => !visibleSections.has(key)),
     theme: "custom",
     customTheme,
-    defaultOrder: el.settingsLayoutList.querySelector("[data-default-order]")?.value || state.settings.defaultOrder,
+    defaultOrder: el.settingsDialog.querySelector("[data-default-order]")?.value || state.settings.defaultOrder,
     psnUser: el.settingsPsnUser.value,
     microsoftUser: el.settingsMicrosoftUser.value,
     steamUser: el.settingsSteamUser.value,
@@ -3308,12 +3349,12 @@ async function saveSettingsFromForm(event, { close = true } = {}) {
     language: el.settingsLanguage.value,
     stores,
     defaultOwner: el.settingsDefaultOwner.value,
-    shelfSync: Boolean(el.settingsLayoutList.querySelector("[data-shelf-sync]")?.checked),
-    hidePageSwitch: el.settingsLayoutList.querySelector("[data-hide-page-switch]")?.checked === true,
-    streamFilterPriority: normalizeStreamFilterMode(el.settingsLayoutList.querySelector("[data-stream-filter-priority]")?.value),
-    prioritizeFinishedStream: normalizeStreamFilterMode(el.settingsLayoutList.querySelector("[data-stream-filter-priority]")?.value) === "stream",
-    hideNonStreamPlaying: el.settingsLayoutList.querySelector("[data-hide-non-stream-playing]")?.checked === true,
-    weekStart: normalizeWeekStart(el.settingsLayoutList.querySelector("[data-week-start]")?.value || state.settings.weekStart),
+    shelfSync: Boolean(el.settingsDialog.querySelector("[data-shelf-sync]")?.checked),
+    hidePageSwitch: el.settingsDialog.querySelector("[data-hide-page-switch]")?.checked === true,
+    streamFilterPriority: normalizeStreamFilterMode(el.settingsDialog.querySelector("[data-stream-filter-priority]")?.value),
+    prioritizeFinishedStream: normalizeStreamFilterMode(el.settingsDialog.querySelector("[data-stream-filter-priority]")?.value) === "stream",
+    hideNonStreamPlaying: el.settingsDialog.querySelector("[data-hide-non-stream-playing]")?.checked === true,
+    weekStart: normalizeWeekStart(el.settingsDialog.querySelector("[data-week-start]")?.value || state.settings.weekStart),
     forceCacheOnLoad: document.querySelector("#settingsForceCacheOnLoad")?.checked === true,
     gotyAlwaysShow: document.querySelector("#settingsGotyAlwaysShow")?.checked === true,
   });
@@ -5723,6 +5764,10 @@ function downloadCanvas(canvas, filename) {
 function scrollToSearchArea() {
   document.querySelector(".toolbar")?.scrollIntoView({ behavior: "smooth", block: "start" });
   window.requestAnimationFrame(() => el.searchInput?.focus({ preventScroll: true }));
+}
+
+function scrollToGameList() {
+  document.querySelector("#backlog")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function scrollToFinishedSection() {
@@ -9400,8 +9445,11 @@ function updateDetailTrophyEdges() {
 
 function updateScrollTopButton() {
   const visible = window.scrollY > 180 && !document.body.classList.contains("dialog-open");
+  const dockVisible = window.innerWidth >= 761 || window.scrollY > 180;
   el.scrollTopButton?.classList.toggle("visible", visible);
   el.floatingEditActions?.classList.toggle("visible", visible);
+  el.mobileActionDock?.classList.toggle("visible", dockVisible);
+  el.mobileDockUp?.classList.toggle("is-visible", visible);
 }
 
 function sortedDetailTrophies() {
@@ -10519,8 +10567,7 @@ function gridIcon() {
 function sortArrowIcon(desc = false) {
   return `
     <svg class="sort-arrow-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="${desc ? "M12 3.5v17" : "M12 20.5v-17"}"></path>
-      <path d="${desc ? "M6.5 15l5.5 5.5 5.5-5.5" : "M6.5 9l5.5-5.5L17.5 9"}"></path>
+      <path d="${desc ? "M12 5v14m-7-7 7 7 7-7" : "M12 19V5m-7 7 7-7 7 7"}"></path>
     </svg>
   `;
 }
@@ -12335,8 +12382,12 @@ async function hasSharedEditorSession() {
 }
 
 async function syncSharedEditorSession() {
+  setSettingsAuthLoading(true);
   const active = await hasSharedEditorSession();
-  if (active === state.canEdit) return;
+  if (active === state.canEdit) {
+    setSettingsAuthLoading(false);
+    return;
+  }
   state.canEdit = active;
   if (active) sessionStorage.setItem(SESSION_KEY, "true");
   else {
@@ -12347,14 +12398,26 @@ async function syncSharedEditorSession() {
   if (active) maybeShowUpdatesPopup();
 }
 
+function setSettingsAuthLoading(loading) {
+  document.body.classList.toggle("auth-checking", loading);
+  [el.settingsButton, el.mobileDockSettings].forEach((button) => {
+    if (!button) return;
+    button.disabled = loading;
+    if (loading) button.setAttribute("aria-busy", "true");
+    else button.removeAttribute("aria-busy");
+  });
+}
+
 async function ensureEditMode() {
   if (state.canEdit) return true;
   let showError = false;
   while (!state.canEdit) {
     const password = await requestEditorPassword({ error: showError });
     if (!password) return false;
+    setSettingsAuthLoading(true);
     const ok = await verifyPassword(password);
     if (!ok) {
+      setSettingsAuthLoading(false);
       showError = true;
       continue;
     }

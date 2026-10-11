@@ -501,6 +501,7 @@ const el = {
   detailTrophyList: document.querySelector("#detailTrophyList"),
   detailCover: document.querySelector(".detail-cover img"),
   dialog: document.querySelector("#gameDialog"),
+  gameAddTargetPicker: document.querySelector("#gameAddTargetPicker"),
   form: document.querySelector("#gameForm"),
   dialogTitle: document.querySelector("#dialogTitle"),
   gameDialogSaveButton: document.querySelector("#gameDialogSaveButton"),
@@ -724,10 +725,8 @@ function quickAddGame() {
 
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js").catch(() => {
-      // Asset caching is optional; the app still works without it.
-    });
+  navigator.serviceWorker.register("/service-worker.js").catch(() => {
+    // Asset caching is optional; the app still works without it.
   });
 }
 
@@ -981,7 +980,17 @@ function bindEvents() {
   el.mobileDockAdd?.addEventListener("click", quickAddGame);
   el.searchButton?.addEventListener("click", scrollToSearchArea);
   el.floatingSearchButton?.addEventListener("click", scrollToSearchArea);
-  el.mobileDockSearch?.addEventListener("click", scrollToSearchArea);
+  el.mobileDockSearch?.addEventListener("click", () => {
+    el.mobileDockSearch.classList.add("is-active");
+    scrollToSearchArea();
+  });
+  el.mobileActionDock?.addEventListener("click", (event) => {
+    const action = event.target.closest(".mobile-dock-action");
+    if (action && action !== el.mobileDockSearch) el.mobileDockSearch?.classList.remove("is-active");
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!el.mobileActionDock?.contains(event.target)) el.mobileDockSearch?.classList.remove("is-active");
+  });
   el.mobileDockStats?.addEventListener("click", () => openFinishedStatsDialog(state.completedYear || "all", { streamMode: state.completedStreamMode }));
   el.mobileDockGoty?.addEventListener("click", () => openGameOfTheYearDialogWithAutofillLoading(currentGameOfTheYear(), { force: true, autoPick: true }));
   el.syncButton.addEventListener("click", syncNow);
@@ -1305,6 +1314,15 @@ function bindEvents() {
     newGameStreamTouched = true;
     syncNewGameRequiredHighlights();
   });
+  el.gameAddTargetPicker.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-game-target]");
+    if (!button || state.editingId) return;
+    el.fields.section.value = button.dataset.gameTarget;
+    syncStyledSelect(el.fields.section, { activeValue: null });
+    markNewGameListTouched();
+    syncDialogPriceVisibility();
+    syncGameAddTargetPicker();
+  });
   el.fields.section.addEventListener("change", () => {
     markNewGameListTouched();
     syncDialogPriceVisibility();
@@ -1405,6 +1423,7 @@ function bindEvents() {
   window.addEventListener("resize", () => {
     syncDisplayMode();
     syncSectionTabsStickyOffset();
+    syncGameAddTargetPicker();
   }, { passive: true });
   window.matchMedia("(display-mode: standalone)").addEventListener?.("change", syncDisplayMode);
 }
@@ -1891,6 +1910,7 @@ function syncMobileDockGoty() {
     localStorage.removeItem(GOTY_DOCK_DISMISSED_KEY);
   }
   button.hidden = !state.canEdit
+    || !gameOfTheYearVisible()
     || !state.gotyDockDismissed
     || !candidates.length
     || isSetUp
@@ -7432,17 +7452,18 @@ function renderCompleted() {
               ${completedDurationLine(game, " completed-duration-list")}
             </div>
             <div class="completed-meta">
-              <span class="completed-platform">${completedOwnerBadges(game)}${completedBadges(game, { includeRating: state.viewMode === "list" })}</span>
+              <span class="completed-platform">${completedOwnerBadges(game)}${completedBadges(game, { includeRating: true })}</span>
               ${completedDurationLine(game)}
               ${completedDateLine(game)}
             </div>
+            ${ratingBreakdown}
+            ${state.viewMode === "list" ? "" : `<button class="ghost-button restore-action" type="button">${backIcon()}<span>${escapeHtml(tt("Backlog"))}</span></button>`}
           </div>
           <div class="completed-actions">
             <button class="icon-button completed-edit-action" type="button" title="Edit" aria-label="Edit">${pencilIcon()}</button>
-            <button class="ghost-button restore-action" type="button">${backIcon()}<span>${escapeHtml(tt("Backlog"))}</span></button>
+            ${state.viewMode === "list" ? `<button class="ghost-button restore-action" type="button">${backIcon()}<span>${escapeHtml(tt("Backlog"))}</span></button>` : ""}
           </div>
         </div>
-        ${ratingBreakdown}
       </div>
     `;
   }).join("") : `<div class="empty">Finished games will stay saved here.</div>`;
@@ -8828,7 +8849,6 @@ function cardFor(game, options = {}) {
   const card = createGameCardShell(document);
   if (game.playing && !neutralReleaseCard) {
     card.querySelector(".game-main")?.append(card.querySelector(".card-actions"));
-    card.querySelector(".card-footer")?.remove();
   }
   const statuses = gameStatuses(game);
   const owners = ownerTags(game);
@@ -8916,7 +8936,8 @@ function cardFor(game, options = {}) {
   if (backlogAction) {
     backlogAction.title = tt("Backlog");
     backlogAction.setAttribute("aria-label", tt("Move back to backlog"));
-    backlogAction.querySelector(".action-label").textContent = tt("Backlog");
+    const actionLabel = backlogAction.querySelector(".action-label");
+    if (actionLabel) actionLabel.textContent = tt("Backlog");
   }
   if (editAction) {
     editAction.title = tt("Edit");
@@ -8936,55 +8957,65 @@ function cardFor(game, options = {}) {
     card.querySelector(".card-footer")?.remove();
     prices.remove();
   } else if (displaySection === "new") {
-    card.querySelector(".edit-action").remove();
+    card.querySelector(".edit-action")?.remove();
     prices.remove();
-    priceRefreshAction.remove();
-    backlogAction.remove();
-    trophyAction.remove();
-    boughtAction.innerHTML = `${forwardIcon()}<span class="action-label">${escapeHtml(tt("Setup"))}</span>`;
-    boughtAction.classList.remove("ghost-button");
-    boughtAction.classList.add("primary-button");
-    boughtAction.addEventListener("click", () => finishSetupGame(game.id));
-    completeAction.innerHTML = `${playIcon()}<span class="action-label">${escapeHtml(tt("Play"))}</span>`;
-    completeAction.addEventListener("click", () => startPlaying(game.id));
+    priceRefreshAction?.remove();
+    backlogAction?.remove();
+    trophyAction?.remove();
+    if (boughtAction) {
+      boughtAction.innerHTML = `${forwardIcon()}<span class="action-label">${escapeHtml(tt("Setup"))}</span>`;
+      boughtAction.classList.remove("ghost-button");
+      boughtAction.classList.add("primary-button");
+      boughtAction.addEventListener("click", () => finishSetupGame(game.id));
+    }
+    if (completeAction) {
+      completeAction.innerHTML = `${playIcon()}<span class="action-label">${escapeHtml(tt("Play"))}</span>`;
+      completeAction.addEventListener("click", () => startPlaying(game.id));
+    }
   } else if (displaySection === "backlog" || game.completedAt) {
     prices.remove();
-    priceRefreshAction.remove();
-    boughtAction.remove();
+    priceRefreshAction?.remove();
+    boughtAction?.remove();
     if (game.playing) {
-      backlogAction.addEventListener("click", () => returnPlayingToBacklog(game.id));
+      backlogAction?.addEventListener("click", () => returnPlayingToBacklog(game.id));
       deleteAction?.remove();
-    } else backlogAction.remove();
-    completeAction.innerHTML = game.playing
-      ? `${checkIcon()}<span class="action-label">${escapeHtml(tt("Finished"))}</span>`
-      : `${playIcon()}<span class="action-label">${escapeHtml(tt("Play"))}</span>`;
-    completeAction.addEventListener("click", () => {
-      if (game.playing) completeGame(game.id);
-      else startPlaying(game.id);
-    });
-    trophyAction.hidden = !game.playing;
-    trophyAction.classList.toggle("active", Boolean(game.platinum));
-    if (game.playing) {
-      trophyAction.classList.add("playing-completed-action");
-      trophyAction.innerHTML = `${trophyIcon()}<span class="action-label">${escapeHtml(tt("Completed"))}</span>`;
-      card.querySelector(".card-actions")?.append(completeAction, trophyAction, backlogAction);
+    } else backlogAction?.remove();
+    if (completeAction) {
+      completeAction.innerHTML = game.playing
+        ? `${checkIcon()}<span class="action-label">${escapeHtml(tt("Finished"))}</span>`
+        : `${playIcon()}<span class="action-label">${escapeHtml(tt("Play"))}</span>`;
+      completeAction.addEventListener("click", () => {
+        if (game.playing) completeGame(game.id);
+        else startPlaying(game.id);
+      });
     }
-    trophyAction.addEventListener("click", () => completeGameWithTrophy(game.id));
+    if (trophyAction) {
+      trophyAction.hidden = !game.playing;
+      trophyAction.classList.toggle("active", Boolean(game.platinum));
+    }
+    if (game.playing) {
+      trophyAction?.classList.add("playing-completed-action");
+      if (trophyAction) trophyAction.innerHTML = `${trophyIcon()}<span class="action-label">${escapeHtml(tt("Completed"))}</span>`;
+      card.querySelector(".card-actions")?.append(...[completeAction, trophyAction, backlogAction].filter(Boolean));
+    }
+    trophyAction?.addEventListener("click", () => completeGameWithTrophy(game.id));
   } else {
-    backlogAction.remove();
-    completeAction.remove();
-    trophyAction.remove();
+    backlogAction?.remove();
+    completeAction?.remove();
+    trophyAction?.remove();
     const providers = priceProvidersForGame(game);
     if (providers.length) {
       prices.style.setProperty("--price-columns", providers.length);
       prices.innerHTML = pricesFor(game);
-      priceRefreshAction.addEventListener("click", () => refreshPricesForGame(game.id));
+      priceRefreshAction?.addEventListener("click", () => refreshPricesForGame(game.id));
     } else {
       prices.remove();
-      priceRefreshAction.remove();
+      priceRefreshAction?.remove();
     }
-    boughtAction.innerHTML = `${forwardIcon()}<span class="action-label">${escapeHtml(tt("Backlog"))}</span>`;
-    boughtAction.addEventListener("click", () => moveToBacklog(game.id));
+    if (boughtAction) {
+      boughtAction.innerHTML = `${forwardIcon()}<span class="action-label">${escapeHtml(tt("Backlog"))}</span>`;
+      boughtAction.addEventListener("click", () => moveToBacklog(game.id));
+    }
   }
   card.querySelector(".edit-action")?.addEventListener("click", () => openEditor(game.id));
   const trailerToggle = card.querySelector(".trailer-toggle");
@@ -9012,6 +9043,7 @@ function cardFor(game, options = {}) {
     if (event.target.closest("button, a")) return;
     openDetail(game.id);
   });
+  if (game.playing && !neutralReleaseCard) card.querySelector(".card-footer")?.remove();
   return card;
 }
 
@@ -9535,7 +9567,6 @@ function updateDetailTrophyEdges() {
 }
 
 function updateScrollTopButton() {
-  syncMobileDockViewport();
   const visible = window.scrollY > 180 && !document.body.classList.contains("dialog-open");
   const dockVisible = window.innerWidth >= 761 || window.scrollY > 180;
   el.scrollTopButton?.classList.toggle("visible", visible);
@@ -9543,18 +9574,6 @@ function updateScrollTopButton() {
   el.mobileActionDock?.classList.toggle("visible", dockVisible);
   el.mobileDockUp?.classList.toggle("is-visible", visible);
 }
-
-function syncMobileDockViewport() {
-  const viewport = window.visualViewport;
-  const bottomGap = viewport
-    ? Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))
-    : 0;
-  document.documentElement.style.setProperty("--mobile-dock-viewport-bottom", `${bottomGap}px`);
-}
-
-window.visualViewport?.addEventListener("resize", syncMobileDockViewport, { passive: true });
-window.visualViewport?.addEventListener("scroll", syncMobileDockViewport, { passive: true });
-syncMobileDockViewport();
 
 function sortedDetailTrophies() {
   const direction = state.detailTrophyDirection === "asc" ? 1 : -1;
@@ -10237,13 +10256,13 @@ function completedBadges(game, options = {}) {
     mediaFormatBadge(game),
     game.coop ? coopBadge() : "",
     game.multiplayer && !game.coop ? multiplayerBadge() : "",
-    options.includeRating === false ? "" : ratingScoreBadge(game),
     game.dlc ? dlcBadge(game) : "",
     entitlementBadge(game),
     game.emulator ? `<span class="emulator-pill">${escapeHtml(tt("Emulator"))}</span>` : "",
     game.stream ? streamBadge() : "",
     game.replayCount ? replayBadge(game.replayCount) : "",
     options.includePsn === false ? "" : (progress ? psnProgressBadge(progress) : ""),
+    options.includeRating === false ? "" : ratingScoreBadge(game),
   ].filter(Boolean).join("");
 }
 
@@ -10255,8 +10274,10 @@ function completedRatingBreakdownMarkup(game) {
   if (!rows.length) return "";
   return `<div class="completed-rating-breakdown" aria-label="${escapeHtml(tt("Rating breakdown"))}">${rows.map(([key, label, value]) => `
     <span class="completed-rating-item" data-rating-key="${escapeHtml(key)}">
-      <span>${escapeHtml(tt(label))}</span>
-      <strong>${escapeHtml(value)}/5</strong>
+      <span class="completed-rating-label">${escapeHtml(tt(label))}</span>
+      <span class="completed-rating-stars${value === 5 ? " is-perfect" : ""}" data-rating-value="${value}" style="${ratingStarFillStyle(value)}" aria-label="${escapeHtml(`${tt(label)}: ${value}/5`)}">
+        <span class="star-display" aria-hidden="true">${ratingStarsMarkup()}</span>
+      </span>
     </span>
   `).join("")}</div>`;
 }
@@ -11789,7 +11810,27 @@ function markNewGameListTouched() {
   syncNewGameRequiredHighlights();
 }
 
+function syncGameAddTargetPicker() {
+  const picker = el.gameAddTargetPicker;
+  const isNewGame = !state.editingId && el.dialog.classList.contains("is-new-game");
+  picker.hidden = !isNewGame;
+  if (!isNewGame) return;
+  const options = picker.querySelector(".shelf-gamelist-target-options");
+  let activeButton;
+  picker.querySelectorAll("[data-game-target]").forEach((button) => {
+    const active = button.dataset.gameTarget === el.fields.section.value;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+    if (active) activeButton = button;
+  });
+  if (activeButton) requestAnimationFrame(() => {
+    options.style.setProperty("--target-left", `${activeButton.offsetLeft}px`);
+    options.style.setProperty("--target-width", `${activeButton.offsetWidth}px`);
+  });
+}
+
 function syncNewGameRequiredHighlights() {
+  syncGameAddTargetPicker();
   const isNewGame = !state.editingId && el.dialog.classList.contains("is-new-game");
   el.dialog.classList.toggle("needs-title-field", isNewGame && !el.fields.title.value.trim());
   el.dialog.classList.toggle("needs-platform-field", isNewGame && !el.fields.platform.value.trim());
@@ -11802,8 +11843,9 @@ function syncNewGameRequiredHighlights() {
 }
 
 function syncNewGameUpcomingSection() {
-  if (state.editingId || !newGameShouldBeUpcoming()) return;
-  el.fields.section.value = "upcoming";
+  if (state.editingId) return;
+  if (newGameShouldBeUpcoming()) el.fields.section.value = "upcoming";
+  else if (el.fields.releaseDate.value && el.fields.section.value === "upcoming") el.fields.section.value = "wanted";
   syncStyledSelect(el.fields.section, { activeValue: null });
   syncDialogPriceVisibility();
   syncNewGameRequiredHighlights();
@@ -11873,7 +11915,7 @@ async function openEditor(id = "") {
   const game = state.games.find((item) => item.id === id) || blankGame();
   newGameListTouched = Boolean(id);
   newGameStreamTouched = Boolean(id);
-  el.dialogTitle.textContent = id ? tt("Edit Game") : tt("Add Game");
+  el.dialogTitle.textContent = id ? tt("Edit Game") : tt("Add game");
   const saveLabel = id ? "Save" : "Add to Gamelist";
   el.gameDialogSaveButton.dataset.i18n = saveLabel;
   el.gameDialogSaveButton.textContent = tt(saveLabel);

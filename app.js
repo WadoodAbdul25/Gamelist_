@@ -1,3 +1,5 @@
+import { bindCardHoverSounds, playRatingSound, playUiSound, scrollWithSound } from "./card-hover-sound.js";
+import { renderBatchedList, stopBatchedList } from "./batched-list.js";
 import { syncMediaFormatToggle } from "./media-format-toggle.js";
 import { mountCollectionWorkspace, prepareCollectionWorkspace } from "./collection-workspace.js";
 import { openSharedAddGame, warmSharedAddGame } from "./shared-add-game.js";
@@ -5,7 +7,7 @@ import { normalizeSearchText, bindModalTouchGuard, createGameCardShell, bindActi
 import { applySiteTheme, normalizeThemeSettings, ownerCardColorClass, ownerColorClass, themeSettingsContent, bindThemeSettingsContent, readThemeSettingsContent } from "./theme-system.js";
 import { applyDocumentTranslations, languageOptions, normalizeLanguage, t } from "./i18n.js";
 import { accountSettingsMarkup } from "./account-settings-ui.js";
-import { isPlayasiaStore, syncGameListControls, syncGameListSlider, syncStoreFieldIcon, preventImplicitGameSubmit } from "./game-editor-controls.js";
+import { isPlayasiaStore, syncGameListControls, syncGameListSlider, syncStoreFieldIcon, SHELF_COUNTRIES, preventImplicitGameSubmit } from "./game-editor-controls.js";
 
 document.querySelector("#settingsAccountsMount").innerHTML = accountSettingsMarkup();
 
@@ -589,6 +591,7 @@ async function init() {
   }
   document.body.classList.toggle("can-edit", state.canEdit);
   bindEvents();
+  bindCardHoverSounds(document);
   initRenderSettling();
   warmUiIcons();
   bindTextureParallax();
@@ -1209,7 +1212,7 @@ function bindEvents() {
   el.brandVersion?.addEventListener("click", clearSiteCachesAndReload);
   el.scrollTopButton.addEventListener("click", () => {
     if (document.body.classList.contains("dialog-open")) return;
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollWithSound(0);
   });
   el.mobileDockUp?.addEventListener("click", () => el.scrollTopButton.click());
   el.detailCloseButton.addEventListener("click", () => el.detailDialog.close());
@@ -2825,6 +2828,7 @@ function settingsDevFeaturesItem(kind) {
     ] },
     { label: "Diagnostics", links: [
       { href: "/api/secret-status", label: "Integration health" },
+      { href: "/dev-sounds.html", label: "Sound lab" },
     ] },
   ];
   const linkMarkup = (link) => `
@@ -3924,6 +3928,7 @@ function showGameOfTheYearAutofillLoading(games = []) {
   return new Promise((resolve) => {
     window.setTimeout(() => {
       window.clearInterval(timer);
+      if (overlay.isConnected) playUiSound("congrats");
       overlay.classList.remove("visible");
       window.setTimeout(() => {
         overlay.remove();
@@ -5815,16 +5820,16 @@ function downloadCanvas(canvas, filename) {
 }
 
 function scrollToSearchArea() {
-  document.querySelector(".toolbar")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollWithSound(document.querySelector(".toolbar"));
   window.requestAnimationFrame(() => el.searchInput?.focus({ preventScroll: true }));
 }
 
 function scrollToGameList() {
-  document.querySelector("#backlog")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollWithSound(document.querySelector("#backlog"));
 }
 
 function scrollToFinishedSection() {
-  document.querySelector("#completed")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollWithSound(document.querySelector("#completed"));
 }
 
 function bindLatestFinishedHeading() {
@@ -6752,7 +6757,7 @@ function completedStatDetail(year, yearCount, total, completedYearCount, expansi
 }
 
 function scrollToCompletedSection() {
-  document.querySelector("#completed")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollWithSound(document.querySelector("#completed"));
 }
 
 function sectionCountLabel(section, games, count) {
@@ -6973,6 +6978,7 @@ function handleBoardSwipeEnd(event) {
   const index = sections.indexOf(state.mobileSection);
   const next = dx < 0 ? sections[index + 1] : sections[index - 1];
   if (!next) return;
+  playUiSound("swipe", { direction: dx < 0 ? 1 : -1 });
   state.mobileSection = next;
   render();
 }
@@ -7015,7 +7021,7 @@ function renderFilters() {
   fillSelect(region, ["all", ...unique(collectionRecords().map(game => game.country).filter(Boolean))], state.filters.region, tt("All regions"));
   const condition = document.querySelector("#collectionConditionFilter");
   condition.value = state.filters.condition;
-  syncStyledSelect(region, { activeValue: "all" });
+  syncStyledSelect(region, { flags: true, activeValue: "all" });
   syncStyledSelect(condition, { activeValue: "all" });
   syncStyledSelect(el.sortFilter, { activeValue: null });
 }
@@ -7052,7 +7058,9 @@ function syncStyledSelect(select, options = {}) {
   const selectOptions = [...select.options].map((option) => ({
     value: option.value,
     label: option.textContent.trim(),
-    flag: option.dataset.flag || "",
+    flag: option.dataset.flag || (options.flags && option.value && option.value !== "all"
+      ? `assets/flags/${SHELF_COUNTRIES.find(([country]) => country === option.value)?.[2] || "world"}.svg`
+      : ""),
     selected: option.selected,
     disabled: option.disabled || option.hidden,
     fontFamily: option.style.fontFamily || "",
@@ -7272,25 +7280,27 @@ function renderSection(section) {
       && previous.psn === state.psnActivity && previous.steam === state.steamActivity
       && previous.xbox === state.xboxActivity) return;
   list.renderInputs = { signature, collection: collectionData, psn: state.psnActivity, steam: state.steamActivity, xbox: state.xboxActivity };
-  list.innerHTML = "";
   list.classList.toggle("list-view", state.viewMode === "list");
   if (!games.length) {
+    stopBatchedList(list);
     const query = el.searchInput.value.trim();
     list.innerHTML = emptyGamesMarkup(query);
     list.querySelector("[data-add-search]")?.addEventListener("click", () => addGameFromSearch(query, section));
     return;
   }
-  const fragment = document.createDocumentFragment();
-  games.forEach((game, index) => {
-    fragment.appendChild(state.viewMode === "list"
+  renderBatchedList(list, games, {
+    resetKey: JSON.stringify([section, state.viewMode, state.filters, collectionMedia]),
+    loadMoreLabel: tt("Show more"),
+    createItem: (game, index) => state.viewMode === "list"
       ? rowFor(game, section, { imagePriority: index < 10 ? "eager" : "lazy" })
-      : cardFor(game, { imagePriority: index < 6 ? "eager" : "lazy", displaySection: section }));
+      : cardFor(game, { imagePriority: index < 6 ? "eager" : "lazy", displaySection: section }),
+    canLoad: () => !state.draggingId && section === state.mobileSection,
+    beforeAppend: settleAfterImages,
+    afterAppend: (nodes) => {
+      if (manualDragEnabled()) setupDrag(list, nodes);
+      scheduleRenderSettle(`section:${section}`);
+    },
   });
-  list.appendChild(fragment);
-  if (state.viewMode === "list") requestAnimationFrame(() => updateRowTitleOverflow(list));
-  if (manualDragEnabled()) setupDrag(list);
-  settleAfterImages(list);
-  scheduleRenderSettle(`section:${section}`);
 }
 
 function manualDragEnabled() {
@@ -11401,14 +11411,18 @@ function renderRatingInputs(container, namePrefix) {
     </fieldset>
   `).join("");
   container.querySelectorAll(".rating-row").forEach((row) => {
-    row.addEventListener("change", () => {
-      setRatingRowValue(row, row.querySelector("input:checked")?.value);
+    row.addEventListener("change", (event) => {
+      const previous = normalizeRatingValue(row.dataset.ratingValue);
+      const next = normalizeRatingValue(row.querySelector("input:checked")?.value);
+      setRatingRowValue(row, next);
+      playRatingSound(next, previous, event);
     });
     row.querySelectorAll("[data-rating-step]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", (event) => {
         const current = normalizeRatingValue(row.querySelector("input:checked")?.value);
         const next = normalizeRatingValue(current + Number(button.dataset.ratingStep || 0));
         setRatingInputValue(row, next);
+        playRatingSound(next, current, event);
       });
     });
   });
@@ -12731,8 +12745,8 @@ function nextOrder(section) {
     .map((game) => Number(game.order) || 0)) + 1;
 }
 
-function setupDrag(list) {
-  list.querySelectorAll(".game-card, .game-row").forEach((item) => {
+function setupDrag(list, items) {
+  items.forEach((item) => {
     item.addEventListener("dragstart", () => {
       state.draggingId = item.dataset.id;
       item.classList.add("dragging");
@@ -12747,7 +12761,7 @@ function setupDrag(list) {
       const dragging = list.querySelector(".dragging");
       const after = getDragAfterElement(list, event.clientY);
       if (!dragging) return;
-      if (after == null) list.appendChild(dragging);
+      if (after == null) list.insertBefore(dragging, list.querySelector(".list-load-more"));
       else list.insertBefore(dragging, after);
     });
   });
@@ -12766,8 +12780,14 @@ function getDragAfterElement(container, y) {
 function saveSectionOrder(list) {
   const editedAt = new Date().toISOString();
   let changed = false;
-  [...list.querySelectorAll(".game-card, .game-row")].forEach((item, index) => {
-    const game = getGame(item.dataset.id);
+  const visibleIds = [...list.querySelectorAll(".game-card, .game-row")].map(item => item.dataset.id);
+  const visible = new Set(visibleIds);
+  const section = list.dataset.section;
+  const remaining = state.games.filter(game => !game.deletedAt
+    && (section === "new" ? isNewAdditionGame(game) : game.section === section)
+    && !game.completedAt && !game.playing && !visible.has(game.id)
+  ).sort((a, b) => compareGames(a, b, section));
+  [...visibleIds.map(getGame), ...remaining].forEach((game, index) => {
     if (!game || game.order === index) return;
     game.order = index;
     markGameEdited(game, editedAt);

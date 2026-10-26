@@ -111,7 +111,7 @@ function observeTwitchPreviewSize(list, card) {
 }
 
 function syncTwitchPreviewPlacement() {
-  const mobile = window.matchMedia("(max-width: 699px)").matches;
+  const mobile = window.matchMedia("(max-width: 689px)").matches;
   document.querySelectorAll(".playing-panel > .playing-list").forEach((list) => {
     const panel = list.parentElement;
     const preview = list.querySelector(":scope > .twitch-preview-card")
@@ -610,7 +610,10 @@ export function completedCardMarkup({ title, cover = "", trophyIcon, trophyName,
 export function horizontalCarouselState(list) {
   const max = Math.max(0, list.scrollWidth - list.clientWidth - 1);
   const overflow = max > 2;
-  return { max, overflow, atStart: !overflow || list.scrollLeft <= 2, atEnd: !overflow || list.scrollLeft >= max };
+  const lastCard = list.lastElementChild;
+  const lastCardVisible = overflow && lastCard
+    && lastCard.getBoundingClientRect().right <= list.getBoundingClientRect().left + list.clientLeft + list.clientWidth + 1;
+  return { max, overflow, atStart: !overflow || list.scrollLeft <= 2, atEnd: !overflow || list.scrollLeft >= max || Boolean(lastCardVisible) };
 }
 
 export function syncViewModeButton(button, mode, { gridIcon, linesIcon }) {
